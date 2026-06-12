@@ -24,7 +24,10 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
     "plugins": [
       "expo-dev-client",
@@ -35,7 +38,9 @@
       [
         "expo-share-intent",
         {
-          "androidIntentFilters": ["text/*"]
+          "androidIntentFilters": [
+            "text/*"
+          ]
         }
       ],
       [
@@ -46,6 +51,11 @@
           "imageWidth": 220
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "cfcbcbdb-f894-46b4-a83c-9c32bd4fea05"
+      }
+    }
   }
 }
