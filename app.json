@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Aspis",
+    "slug": "aspis",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "aspis",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1B1F3B"
+    },
+    "ios": {
+      "bundleIdentifier": "com.claudiogonzaga.aspis"
+    },
+    "android": {
+      "package": "com.claudiogonzaga.aspis",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1B1F3B"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-font",
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*"]
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1B1F3B",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220
+        }
+      ]
+    ]
+  }
+}
