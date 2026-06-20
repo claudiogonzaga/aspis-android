@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreenAPI from 'expo-splash-screen';
 import { createNavigationContainerRef } from '@react-navigation/native';
@@ -18,6 +17,7 @@ import {
 } from '@expo-google-fonts/inter';
 
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { VaseBackground } from './src/components/VaseBackground';
 import type { RootStackParamList } from './src/navigation/types';
 import { useAppStore } from './src/store/useAppStore';
 import { colors } from './src/theme';
@@ -63,12 +63,9 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <View style={styles.splash}>
-          <LinearGradient
-            colors={[colors.bg.primary, colors.bg.gradientEnd]}
-            style={StyleSheet.absoluteFill}
-          />
+          <VaseBackground />
           <Image source={require('./assets/icon.png')} style={styles.shield} />
-          <StatusBar style="light" />
+          <StatusBar style="dark" />
         </View>
       </SafeAreaProvider>
     );
@@ -78,7 +75,7 @@ export default function App() {
     <SafeAreaProvider>
       <View style={styles.root}>
         <RootNavigator navigationRef={navigationRef} onReady={() => setNavReady(true)} />
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
       </View>
     </SafeAreaProvider>
   );

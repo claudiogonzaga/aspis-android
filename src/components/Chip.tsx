@@ -35,7 +35,7 @@ const styles = StyleSheet.create({
   },
   active: {
     backgroundColor: colors.bg.surfaceStrong,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: colors.border,
   },
   label: {
     ...typography.small,

@@ -19,6 +19,7 @@ credentials.json
 *.keystore
 *.jks
 google-services.json
+client_secret_*.json
 
 # macOS
 .DS_Store

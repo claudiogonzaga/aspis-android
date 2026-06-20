@@ -50,7 +50,8 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 220
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
       "eas": {

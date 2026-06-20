@@ -14,6 +14,7 @@ import {
   DEFAULT_PILLARS,
   DEFAULT_RULES,
 } from '../constants/defaults';
+import { DEFAULT_GEMINI_VOICE, isValidVoice } from '../services/geminiTTS';
 import { configureGoogle, restoreSignIn, signIn, signOutGoogle } from '../services/auth';
 import * as db from '../services/db';
 import type { GoogleUser, Period, Pillar } from '../types';
@@ -26,6 +27,7 @@ const K = {
   minStars: 'aspis:minStars',
   period: 'aspis:period',
   showRead: 'aspis:showRead',
+  ttsVoice: 'aspis:ttsVoice',
 } as const;
 
 interface AppState {
@@ -37,6 +39,7 @@ interface AppState {
   minStars: number;
   period: Period;
   showRead: boolean;
+  ttsVoice: string; // voz do Gemini para a leitura em voz alta
   user: GoogleUser | null;
   feedVersion: number; // bump → telas releem o SQLite
 
@@ -48,6 +51,7 @@ interface AppState {
   setMinStars: (n: number) => Promise<void>;
   setPeriod: (p: Period) => Promise<void>;
   setShowRead: (v: boolean) => Promise<void>;
+  setTtsVoice: (v: string) => Promise<void>;
   googleSignIn: () => Promise<GoogleUser | null>;
   googleSignOut: () => Promise<void>;
   bumpFeed: () => void;
@@ -75,6 +79,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   minStars: DEFAULT_MIN_STARS,
   period: DEFAULT_PERIOD,
   showRead: false,
+  ttsVoice: DEFAULT_GEMINI_VOICE,
   user: null,
   feedVersion: 0,
 
@@ -104,6 +109,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       minStars: map.get(K.minStars) != null ? Number(map.get(K.minStars)) : DEFAULT_MIN_STARS,
       period: (map.get(K.period) as Period) || DEFAULT_PERIOD,
       showRead: map.get(K.showRead) === '1',
+      ttsVoice: isValidVoice(map.get(K.ttsVoice) || '')
+        ? (map.get(K.ttsVoice) as string)
+        : DEFAULT_GEMINI_VOICE,
     });
 
     const user = await restoreSignIn();
@@ -148,6 +156,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowRead: async (v: boolean) => {
     set({ showRead: v });
     await AsyncStorage.setItem(K.showRead, v ? '1' : '0');
+  },
+
+  setTtsVoice: async (v: string) => {
+    const voice = isValidVoice(v) ? v : DEFAULT_GEMINI_VOICE;
+    set({ ttsVoice: voice });
+    await AsyncStorage.setItem(K.ttsVoice, voice);
   },
 
   googleSignIn: async () => {

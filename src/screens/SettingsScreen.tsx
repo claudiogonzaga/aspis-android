@@ -1,7 +1,9 @@
 // Configurações: conta Google + Drive, chave Gemini (SecureStore), modelo,
-// pilares (CRUD), regras extras da IA e defaults de exibição.
+// voz da leitura (Gemini TTS), pilares (CRUD), regras extras da IA e defaults
+// de exibição.
 import { ReactNode, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Linking,
   Pressable,
@@ -20,9 +22,14 @@ import { PeriodSegment } from '../components/PeriodSegment';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StarsRuler } from '../components/StarsRuler';
 import { MODEL_PRESETS } from '../constants/defaults';
+import { GEMINI_VOICES } from '../services/geminiTTS';
+import { useReadAloud } from '../hooks/useReadAloud';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing, typography } from '../theme';
+
+const VOICE_SAMPLE =
+  'Esta é a voz que vai ler os resumos dos seus vídeos em voz alta.';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -45,11 +52,13 @@ export function SettingsScreen({ navigation }: Props) {
     rules,
     minStars,
     period,
+    ttsVoice,
     setGeminiKey,
     setModel,
     setRules,
     setMinStars,
     setPeriod,
+    setTtsVoice,
     googleSignIn,
     googleSignOut,
   } = useAppStore();
@@ -59,6 +68,7 @@ export function SettingsScreen({ navigation }: Props) {
   const [modelDraft, setModelDraft] = useState(model);
   const [rulesDraft, setRulesDraft] = useState(rules);
   const [rulesSaved, setRulesSaved] = useState(false);
+  const sample = useReadAloud();
 
   const maskedKey = geminiKey
     ? `••••••••${geminiKey.slice(-4)}`
@@ -167,6 +177,38 @@ export function SettingsScreen({ navigation }: Props) {
         </Section>
 
         <Section
+          title="Voz da leitura"
+          sub="Voz do Gemini que lê os resumos em voz alta. Toque para escolher e ouvir uma amostra."
+        >
+          <View style={styles.chips}>
+            {GEMINI_VOICES.map((v) => (
+              <Chip
+                key={v.name}
+                label={`${v.label} · ${v.gender === 'female' ? '♀' : '♂'}`}
+                active={ttsVoice === v.name}
+                onPress={() => setTtsVoice(v.name)}
+              />
+            ))}
+          </View>
+          <Text style={styles.voiceDesc}>
+            {GEMINI_VOICES.find((v) => v.name === ttsVoice)?.description ?? ''}
+          </Text>
+          <Pressable
+            onPress={() => sample.toggle(VOICE_SAMPLE, ttsVoice, geminiKey)}
+            style={({ pressed }) => [styles.sampleBtn, pressed && { opacity: 0.7 }]}
+          >
+            {sample.status === 'loading' ? (
+              <ActivityIndicator size="small" color={colors.accent.gold} />
+            ) : (
+              <Text style={styles.sampleLabel}>
+                {sample.status === 'playing' ? '■ Parar amostra' : '▶ Ouvir amostra'}
+              </Text>
+            )}
+          </Pressable>
+          {sample.error && <Text style={styles.voiceErr}>{sample.error}</Text>}
+        </Section>
+
+        <Section
           title="Pilares"
           sub="Os seus objetivos de vida — a IA classifica e pontua cada vídeo por eles."
         >
@@ -253,7 +295,7 @@ const styles = StyleSheet.create({
     ...typography.small,
     color: colors.text.primary,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: colors.border,
     borderRadius: radius.sm,
     paddingVertical: 10,
     paddingHorizontal: spacing.md,
@@ -267,6 +309,22 @@ const styles = StyleSheet.create({
   },
   link: { ...typography.small, color: colors.accent.gold },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  voiceDesc: { ...typography.small, color: colors.text.secondary, marginTop: spacing.sm },
+  sampleBtn: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.md,
+    paddingVertical: 7,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    minWidth: 140,
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sampleLabel: { ...typography.small, fontFamily: 'Inter_600SemiBold', color: colors.text.primary },
+  voiceErr: { ...typography.small, color: colors.accent.danger, marginTop: spacing.sm },
   pillarRow: {
     flexDirection: 'row',
     alignItems: 'center',

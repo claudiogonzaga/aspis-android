@@ -72,6 +72,8 @@ export const MAX_OUTPUT_TOKENS = 4096;
 export const MAX_TRANSCRIPT_CHARS = 14000;
 export const ASK_MAX_TOKENS = 1200;
 export const ASK_TRANSCRIPT_CHARS = 24000;
+export const FACTCHECK_MAX_TOKENS = 2200; // checagem externa + aprofundamento
+export const FLASHCARD_MAX_TOKENS = 1500; // extração de cartões de uma resposta
 
 // Pipeline do feed.
 export const MAX_VIDEOS_PER_CHANNEL = 8; // config.yaml: max_videos_per_channel

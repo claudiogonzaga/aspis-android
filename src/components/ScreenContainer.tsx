@@ -1,23 +1,27 @@
 import { ReactNode } from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '../theme';
+import { VaseBackground } from './VaseBackground';
 
 interface Props {
   children: ReactNode;
   contentStyle?: ViewStyle;
   edges?: ('top' | 'bottom' | 'left' | 'right')[];
+  /** Mostra a moldura de meandro (grega) ao redor da tela. Padrão: true. */
+  meander?: boolean;
 }
 
-export function ScreenContainer({ children, contentStyle, edges = ['top', 'bottom'] }: Props) {
+export function ScreenContainer({
+  children,
+  contentStyle,
+  edges = ['top', 'bottom'],
+  meander = true,
+}: Props) {
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={[colors.bg.primary, colors.bg.gradientEnd]}
-        style={StyleSheet.absoluteFill}
-      />
+      <VaseBackground meander={meander} />
       <SafeAreaView style={styles.safe} edges={edges}>
         <View style={[styles.content, contentStyle]}>{children}</View>
       </SafeAreaView>

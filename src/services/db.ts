@@ -2,7 +2,14 @@
 // do store.py do desktop. Idempotência: vídeo já analisado não é reprocessado.
 import * as SQLite from 'expo-sqlite';
 
-import type { Analysis, ContentSource, QAItem, VideoRecord } from '../types';
+import type {
+  Analysis,
+  ContentSource,
+  QAItem,
+  QAKind,
+  Source,
+  VideoRecord,
+} from '../types';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS videos (
@@ -12,6 +19,7 @@ CREATE TABLE IF NOT EXISTS videos (
     url TEXT, published_at TEXT, duration TEXT,
     pillar TEXT, score INTEGER, is_clickbait INTEGER,
     resumo TEXT, pontos_chave TEXT, fatos TEXT, citacoes TEXT,
+    evidencias TEXT,
     transcript_available INTEGER,
     content_source TEXT,
     fetched_at TEXT,
@@ -24,23 +32,49 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS qa (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'ask',
     question TEXT NOT NULL,
     answer TEXT NOT NULL,
+    sources TEXT NOT NULL DEFAULT '[]',
+    saved_note INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_qa_video ON qa(video_id, id);
 `;
 
-const JSON_FIELDS = ['pontos_chave', 'fatos', 'citacoes'] as const;
+// Colunas adicionadas depois do schema original — aplicadas com ALTER TABLE em
+// bancos já existentes (ADD COLUMN é idempotente via checagem do PRAGMA).
+const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
+  { table: 'videos', column: 'evidencias', ddl: "ALTER TABLE videos ADD COLUMN evidencias TEXT" },
+  { table: 'qa', column: 'kind', ddl: "ALTER TABLE qa ADD COLUMN kind TEXT NOT NULL DEFAULT 'ask'" },
+  { table: 'qa', column: 'sources', ddl: "ALTER TABLE qa ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'" },
+  { table: 'qa', column: 'saved_note', ddl: 'ALTER TABLE qa ADD COLUMN saved_note INTEGER NOT NULL DEFAULT 0' },
+];
+
+const JSON_FIELDS = ['pontos_chave', 'fatos', 'citacoes', 'evidencias'] as const;
 const FLAGS = ['read', 'saved_drive'] as const;
 export type Flag = (typeof FLAGS)[number];
 
 let db: SQLite.SQLiteDatabase | null = null;
 
+function migrate(d: SQLite.SQLiteDatabase): void {
+  for (const m of MIGRATIONS) {
+    const cols = d.getAllSync<{ name: string }>(`PRAGMA table_info(${m.table})`);
+    if (!cols.some((c) => c.name === m.column)) {
+      try {
+        d.execSync(m.ddl);
+      } catch {
+        // coluna pode já existir numa corrida; ignora
+      }
+    }
+  }
+}
+
 function conn(): SQLite.SQLiteDatabase {
   if (!db) {
     db = SQLite.openDatabaseSync('aspis.db');
     db.execSync(SCHEMA);
+    migrate(db);
   }
   return db;
 }
@@ -100,14 +134,16 @@ export function upsertVideo(v: UpsertInput): void {
   const cols = [
     'video_id', 'channel', 'channel_id', 'original_title', 'neutral_title',
     'url', 'published_at', 'duration', 'pillar', 'score', 'is_clickbait',
-    'resumo', 'pontos_chave', 'fatos', 'citacoes', 'transcript_available',
-    'content_source', 'fetched_at', 'transcript_text', 'channel_thumb',
+    'resumo', 'pontos_chave', 'fatos', 'citacoes', 'evidencias',
+    'transcript_available', 'content_source', 'fetched_at', 'transcript_text',
+    'channel_thumb',
   ];
   const record: Record<string, unknown> = {
     ...v,
     pontos_chave: JSON.stringify(v.pontos_chave ?? []),
     fatos: JSON.stringify(v.fatos ?? []),
     citacoes: JSON.stringify(v.citacoes ?? []),
+    evidencias: JSON.stringify(v.evidencias ?? []),
     fetched_at: nowIso(),
     transcript_text: v.transcript_text ?? null,
     channel_thumb: v.channel_thumb ?? '',
@@ -173,20 +209,59 @@ export function setTranscriptText(videoId: string, text: string): void {
   conn().runSync('UPDATE videos SET transcript_text = ? WHERE video_id = ?', [text, videoId]);
 }
 
-// --- Q&A por vídeo (estilo NotebookLM, como no desktop) ---------------------
-export function addQa(videoId: string, question: string, answer: string): number {
+// Substitui os fatos (flashcards) do vídeo — usado ao gerar cartões a partir
+// de uma resposta de Q&A/checagem.
+export function setFatos(videoId: string, fatos: unknown[]): void {
+  conn().runSync('UPDATE videos SET fatos = ? WHERE video_id = ?', [
+    JSON.stringify(fatos ?? []),
+    videoId,
+  ]);
+}
+
+// --- Q&A e checagem externa por vídeo (estilo NotebookLM) -------------------
+export function addQa(
+  videoId: string,
+  question: string,
+  answer: string,
+  kind: QAKind = 'ask',
+  sources: Source[] = [],
+): number {
   const res = conn().runSync(
-    'INSERT INTO qa (video_id, question, answer, created_at) VALUES (?,?,?,?)',
-    [videoId, question, answer, nowIso()],
+    'INSERT INTO qa (video_id, kind, question, answer, sources, created_at) VALUES (?,?,?,?,?,?)',
+    [videoId, kind, question, answer, JSON.stringify(sources ?? []), nowIso()],
   );
   return res.lastInsertRowId;
 }
 
+function qaRowToItem(row: Record<string, unknown>): QAItem {
+  let sources: Source[] = [];
+  try {
+    sources = row.sources ? (JSON.parse(String(row.sources)) as Source[]) : [];
+  } catch {
+    sources = [];
+  }
+  return {
+    id: Number(row.id),
+    kind: (row.kind as QAKind) || 'ask',
+    question: String(row.question ?? ''),
+    answer: String(row.answer ?? ''),
+    sources,
+    saved_note: row.saved_note ? 1 : 0,
+    created_at: String(row.created_at ?? ''),
+  };
+}
+
 export function getQa(videoId: string): QAItem[] {
-  return conn().getAllSync<QAItem>(
-    'SELECT id, question, answer, created_at FROM qa WHERE video_id = ? ORDER BY id',
-    [videoId],
-  );
+  return conn()
+    .getAllSync<Record<string, unknown>>(
+      'SELECT id, kind, question, answer, sources, saved_note, created_at FROM qa WHERE video_id = ? ORDER BY id',
+      [videoId],
+    )
+    .map(qaRowToItem);
+}
+
+export function markQaSaved(id: number, value: 0 | 1 = 1): void {
+  conn().runSync('UPDATE qa SET saved_note = ? WHERE id = ?', [value, id]);
 }
 
 // --- meta (chave/valor) ------------------------------------------------------

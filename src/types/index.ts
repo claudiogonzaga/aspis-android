@@ -20,7 +20,21 @@ export type Fato =
   | { tipo: 'basic'; frente: string; verso: string }
   | { tipo: 'cloze'; texto: string };
 
-// Resultado coagido da análise (mesmas chaves do brain.py após _coerce).
+// Veredito de uma afirmação do vídeo frente à evidência conhecida.
+export type Veredito = 'apoiada' | 'mista' | 'contestada' | 'sem_evidencia';
+
+// Evidência científica/empírica que sustenta (ou contesta) uma afirmação do
+// vídeo. Gerada junto da síntese — sobretudo para saúde, mas também para
+// investimento e demais temas.
+export interface Evidencia {
+  afirmacao: string; // a afirmação feita no vídeo
+  veredito: Veredito;
+  evidencia: string; // o que a literatura/dados disponíveis dizem
+  fontes: string[]; // estudos, diretrizes, autores (texto livre)
+}
+
+// Resultado coagido da análise (mesmas chaves do brain.py após _coerce,
+// + `evidencias`, exclusivo do Android).
 export interface Analysis {
   pillar: string;
   score: number; // 0–100
@@ -30,6 +44,7 @@ export interface Analysis {
   pontos_chave: string[];
   fatos: Fato[];
   citacoes: Citacao[];
+  evidencias: Evidencia[];
 }
 
 // De onde veio o conteúdo analisado (camadas da Funcionalidade 1).
@@ -66,10 +81,24 @@ export interface VideoRecord extends Analysis {
   channel_thumb: string;
 }
 
+// Fonte externa retornada pelo grounding do Gemini (Google Search) na
+// checagem de fatos.
+export interface Source {
+  title: string;
+  uri: string;
+}
+
+// 'ask'      = pergunta do usuário respondida pela transcrição/vídeo;
+// 'factcheck'= checagem externa (corrobora/desmente) + aprofundamento via web.
+export type QAKind = 'ask' | 'factcheck';
+
 export interface QAItem {
   id: number;
+  kind: QAKind;
   question: string;
   answer: string;
+  sources: Source[]; // vazio em 'ask'; preenchido na checagem externa
+  saved_note: 0 | 1; // 1 = já incluído na nota do Obsidian/Drive
   created_at: string;
 }
 

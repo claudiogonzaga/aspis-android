@@ -9,17 +9,29 @@
 import {
   ASK_MAX_TOKENS,
   ASK_TRANSCRIPT_CHARS,
+  FACTCHECK_MAX_TOKENS,
+  FLASHCARD_MAX_TOKENS,
   MAX_OUTPUT_TOKENS,
   MAX_TRANSCRIPT_CHARS,
   TEMPERATURE,
 } from '../constants/defaults';
-import { ASK_SYSTEM, DEFAULT_PILLAR_ENUM, SYSTEM_RULES } from '../constants/prompt';
+import {
+  ASK_SYSTEM,
+  DEFAULT_PILLAR_ENUM,
+  FACTCHECK_SYSTEM,
+  FLASHCARD_SYSTEM,
+  SYSTEM_RULES,
+} from '../constants/prompt';
 import type {
   Analysis,
   ContentSource,
+  Evidencia,
+  Fato,
   Pillar,
   QAItem,
+  Source,
   Transcript,
+  Veredito,
   VideoMeta,
   VideoRecord,
 } from '../types';
@@ -112,14 +124,50 @@ interface GeminiCall {
   parts: GeminiPart[];
   json: boolean;
   maxTokens: number;
+  search?: boolean; // liga o grounding por Google Search (checagem externa)
 }
 
-async function callGemini({ apiKey, model, system, parts, json, maxTokens }: GeminiCall): Promise<string> {
+interface GeminiResult {
+  text: string;
+  sources: Source[];
+}
+
+// Extrai as fontes externas (groundingChunks) que o Google Search anexou à
+// resposta, deduplicadas por URL.
+function extractSources(data: unknown): Source[] {
+  const meta = (data as { candidates?: { groundingMetadata?: unknown }[] })
+    ?.candidates?.[0]?.groundingMetadata as
+    | { groundingChunks?: { web?: { uri?: string; title?: string } }[] }
+    | undefined;
+  const chunks = meta?.groundingChunks ?? [];
+  const seen = new Set<string>();
+  const out: Source[] = [];
+  for (const c of chunks) {
+    const uri = c.web?.uri;
+    if (!uri || seen.has(uri)) continue;
+    seen.add(uri);
+    out.push({ uri, title: c.web?.title || uri });
+  }
+  return out;
+}
+
+async function callGemini({
+  apiKey,
+  model,
+  system,
+  parts,
+  json,
+  maxTokens,
+  search,
+}: GeminiCall): Promise<GeminiResult> {
   if (!apiKey) throw new NoGeminiKeyError();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const body = {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts }],
+    // Grounding (google_search) e responseMimeType=json não convivem na API,
+    // por isso a checagem externa devolve texto + fontes, não JSON.
+    ...(search ? { tools: [{ google_search: {} }] } : {}),
     generationConfig: {
       temperature: TEMPERATURE,
       maxOutputTokens: maxTokens,
@@ -147,7 +195,7 @@ async function callGemini({ apiKey, model, system, parts, json, maxTokens }: Gem
   const textParts: string[] = (data?.candidates?.[0]?.content?.parts ?? [])
     .map((p: { text?: string }) => p.text || '')
     .filter(Boolean);
-  return textParts.join('');
+  return { text: textParts.join(''), sources: extractSources(data) };
 }
 
 // --- parsing / normalização (port do brain.py) -------------------------------
@@ -175,6 +223,30 @@ function parseJsonLoose(raw: string): Record<string, unknown> {
   throw new Error('resposta do LLM não continha JSON válido');
 }
 
+const VEREDITOS: Veredito[] = ['apoiada', 'mista', 'contestada', 'sem_evidencia'];
+
+function coerceEvidencias(raw: unknown): Evidencia[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Evidencia[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const afirmacao = String(o.afirmacao || '').trim();
+    const evidencia = String(o.evidencia || '').trim();
+    if (!afirmacao && !evidencia) continue;
+    const v = String(o.veredito || '').trim() as Veredito;
+    out.push({
+      afirmacao,
+      evidencia,
+      veredito: VEREDITOS.includes(v) ? v : 'sem_evidencia',
+      fontes: Array.isArray(o.fontes)
+        ? (o.fontes as unknown[]).map((f) => String(f).trim()).filter(Boolean)
+        : [],
+    });
+  }
+  return out;
+}
+
 function coerce(obj: Record<string, unknown>, video: VideoMeta, pillarIds: string[]): Analysis {
   let pillar = String(obj.pillar ?? 'nenhum');
   if (!pillarIds.includes(pillar) && pillar !== 'nenhum') pillar = 'nenhum';
@@ -197,6 +269,7 @@ function coerce(obj: Record<string, unknown>, video: VideoMeta, pillarIds: strin
       ? (obj.fatos_para_memorizar as Analysis['fatos'])
       : [],
     citacoes: Array.isArray(obj.citacoes) ? (obj.citacoes as Analysis['citacoes']) : [],
+    evidencias: coerceEvidencias(obj.evidencias),
   };
 }
 
@@ -217,7 +290,7 @@ async function analyzeOnce(
   const system = buildSystemText(opts.pillars, opts.rules);
   let lastErr: unknown = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const text = await callGemini({
+    const { text } = await callGemini({
       apiKey: opts.apiKey,
       model: opts.model,
       system,
@@ -327,7 +400,7 @@ export async function ask(
   parts.push(`\nPERGUNTA DO USUÁRIO:\n${question}`);
   geminiParts.push({ text: parts.join('\n') });
 
-  const answer = await callGemini({
+  const { text } = await callGemini({
     apiKey: opts.apiKey,
     model: opts.model,
     system: ASK_SYSTEM,
@@ -335,5 +408,89 @@ export async function ask(
     json: false,
     maxTokens: ASK_MAX_TOKENS,
   });
-  return (answer || '').trim();
+  return (text || '').trim();
+}
+
+// --- Checagem externa + aprofundamento (#3) ----------------------------------
+// Usa o grounding por Google Search para corroborar/desmentir o vídeo e
+// trazer contexto de fora. Devolve o texto e as fontes externas consultadas.
+export interface FactCheckResult {
+  answer: string;
+  sources: Source[];
+}
+
+export async function factCheck(
+  video: VideoRecord,
+  opts: Pick<BrainOptions, 'apiKey' | 'model'>,
+): Promise<FactCheckResult> {
+  const parts: string[] = [
+    `VÍDEO: ${video.neutral_title || video.original_title || ''}`,
+    `Canal: ${video.channel || ''}`,
+    `URL: ${video.url || ''}`,
+  ];
+  if (video.resumo) parts.push(`\nResumo do vídeo:\n${video.resumo}`);
+  if (video.pontos_chave?.length) {
+    parts.push('\nPontos-chave do vídeo:\n' + video.pontos_chave.map((p) => `- ${p}`).join('\n'));
+  }
+  if (video.evidencias?.length) {
+    parts.push(
+      '\nAfirmações já levantadas (verifique-as):\n' +
+        video.evidencias.map((e) => `- ${e.afirmacao}`).join('\n'),
+    );
+  }
+  const tt = (video.transcript_text || '').trim();
+  if (tt) parts.push('\nTrecho da transcrição:\n' + tt.slice(0, ASK_TRANSCRIPT_CHARS));
+  parts.push(
+    '\nFaça a checagem externa e o aprofundamento conforme as instruções do sistema.',
+  );
+
+  const { text, sources } = await callGemini({
+    apiKey: opts.apiKey,
+    model: opts.model,
+    system: FACTCHECK_SYSTEM,
+    parts: [{ text: parts.join('\n') }],
+    json: false,
+    maxTokens: FACTCHECK_MAX_TOKENS,
+    search: true,
+  });
+  return { answer: (text || '').trim(), sources };
+}
+
+// --- Extração de flashcards de uma resposta (#3) -----------------------------
+// Transforma um texto (resposta de Q&A ou de checagem) em cartões atômicos.
+export async function makeFlashcards(
+  text: string,
+  opts: Pick<BrainOptions, 'apiKey' | 'model'>,
+): Promise<Fato[]> {
+  const { text: out } = await callGemini({
+    apiKey: opts.apiKey,
+    model: opts.model,
+    system: FLASHCARD_SYSTEM,
+    parts: [{ text: `TEXTO:\n${text}` }],
+    json: true,
+    maxTokens: FLASHCARD_MAX_TOKENS,
+  });
+  let obj: Record<string, unknown>;
+  try {
+    obj = parseJsonLoose(out);
+  } catch {
+    return [];
+  }
+  const raw = Array.isArray(obj.fatos) ? obj.fatos : [];
+  const fatos: Fato[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    if (o.tipo === 'cloze' && typeof o.texto === 'string' && o.texto.trim()) {
+      fatos.push({ tipo: 'cloze', texto: o.texto.trim() });
+    } else if (
+      o.tipo === 'basic' &&
+      typeof o.frente === 'string' &&
+      typeof o.verso === 'string' &&
+      (o.frente.trim() || o.verso.trim())
+    ) {
+      fatos.push({ tipo: 'basic', frente: String(o.frente).trim(), verso: String(o.verso).trim() });
+    }
+  }
+  return fatos;
 }
