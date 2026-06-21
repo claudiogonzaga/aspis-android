@@ -64,7 +64,7 @@ export default function App() {
       <SafeAreaProvider>
         <View style={styles.splash}>
           <VaseBackground />
-          <Image source={require('./assets/icon.png')} style={styles.shield} />
+          <Image source={require('./assets/logo-mark.png')} style={styles.shield} />
           <StatusBar style="dark" />
         </View>
       </SafeAreaProvider>

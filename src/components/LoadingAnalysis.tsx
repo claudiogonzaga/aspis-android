@@ -36,7 +36,7 @@ export function LoadingAnalysis({ phase, title }: Props) {
   return (
     <View style={styles.root}>
       <Animated.View style={{ transform: [{ scale: pulse }] }}>
-        <Image source={require('../../assets/icon.png')} style={styles.shield} />
+        <Image source={require('../../assets/logo-mark.png')} style={styles.shield} />
       </Animated.View>
       {title ? (
         <Text style={styles.videoTitle} numberOfLines={2}>

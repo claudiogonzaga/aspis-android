@@ -137,7 +137,7 @@ export function FeedScreen({ navigation }: Props) {
     <View style={styles.header}>
       <View style={styles.topbar}>
         <View style={styles.wordmark}>
-          <Image source={require('../../assets/icon.png')} style={styles.logo} />
+          <Image source={require('../../assets/logo-mark.png')} style={styles.logo} />
           <Text style={styles.appName}>Aspis</Text>
         </View>
         <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={10}>
@@ -269,8 +269,10 @@ export function FeedScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl },
-  header: { paddingTop: spacing.md, paddingBottom: spacing.sm },
+  // Recuos maiores que a faixa da grega (~20px) para o conteúdo ficar DENTRO
+  // da moldura de meandro, sem o escudo/logo sobrepor a borda.
+  list: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl },
+  header: { paddingTop: spacing.xl + spacing.xs, paddingBottom: spacing.sm },
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   logo: { width: 44, height: 44, borderRadius: 22 },
