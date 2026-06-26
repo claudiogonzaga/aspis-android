@@ -52,10 +52,11 @@ export function renderNote(
     '',
     `# ${v.neutral_title}`,
     '',
-    '## Resumo',
-    v.resumo || '_(sem resumo)_',
-    '',
   ];
+  if (v.a_real) {
+    lines.push(`> [!tip] A real`, `> ${v.a_real}`, '');
+  }
+  lines.push('## Resumo', v.resumo || '_(sem resumo)_', '');
   const pontos = v.pontos_chave || [];
   if (pontos.length) {
     lines.push('## Pontos-chave');
@@ -112,6 +113,10 @@ export function synthesisAsText(v: VideoRecord): string {
   const parts: string[] = [v.neutral_title, ''];
   parts.push(`${v.channel} · ${v.duration} · score ${v.score}`);
   parts.push('');
+  if (v.a_real) {
+    parts.push(`A real: ${v.a_real}`);
+    parts.push('');
+  }
   if (v.resumo) {
     parts.push(v.resumo);
     parts.push('');

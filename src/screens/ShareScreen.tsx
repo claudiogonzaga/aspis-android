@@ -31,7 +31,7 @@ type State =
 
 export function ShareScreen({ route, navigation }: Props) {
   const { sharedText } = route.params;
-  const { geminiKey, model, pillars, rules, user } = useAppStore();
+  const { geminiKey, model, pillars, rules, noteLang, user } = useAppStore();
   const [state, setState] = useState<State>({ status: 'loading', phase: 'meta' });
 
   const run = useCallback(async () => {
@@ -89,7 +89,7 @@ export function ShareScreen({ route, navigation }: Props) {
       }
 
       setState({ status: 'loading', phase: 'video', title: meta.title });
-      const r = await analyze(meta, { apiKey: geminiKey, model, pillars, rules }, true, (phase) =>
+      const r = await analyze(meta, { apiKey: geminiKey, model, pillars, rules, noteLang }, true, (phase) =>
         setState({ status: 'loading', phase, title: meta.title }),
       );
 
@@ -113,7 +113,7 @@ export function ShareScreen({ route, navigation }: Props) {
         canRetry: !keyError,
       });
     }
-  }, [sharedText, geminiKey, model, pillars, rules, user]);
+  }, [sharedText, geminiKey, model, pillars, rules, noteLang, user]);
 
   useEffect(() => {
     run();

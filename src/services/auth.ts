@@ -9,6 +9,9 @@ import type { GoogleUser } from '../types';
 export const SCOPES = [
   'https://www.googleapis.com/auth/youtube.readonly',
   'https://www.googleapis.com/auth/drive.file',
+  // Ler o vault inteiro Drive:/Aspis (inclui notas criadas no desktop), para o
+  // leitor de notas in-app. drive.file só enxerga arquivos que o app criou.
+  'https://www.googleapis.com/auth/drive.readonly',
 ];
 
 export class NotSignedInError extends Error {

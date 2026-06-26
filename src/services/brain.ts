@@ -20,6 +20,8 @@ import {
   DEFAULT_PILLAR_ENUM,
   FACTCHECK_SYSTEM,
   FLASHCARD_SYSTEM,
+  IDIOMA_ORIGINAL,
+  IDIOMA_PTBR,
   SYSTEM_RULES,
 } from '../constants/prompt';
 import type {
@@ -27,6 +29,7 @@ import type {
   ContentSource,
   Evidencia,
   Fato,
+  NoteLang,
   Pillar,
   QAItem,
   Source,
@@ -69,7 +72,11 @@ function pillarsBlock(pillars: Pillar[]): string {
   return linhas.join('\n');
 }
 
-export function buildSystemText(pillars: Pillar[], rules: string): string {
+export function buildSystemText(
+  pillars: Pillar[],
+  rules: string,
+  noteLang: NoteLang = 'original',
+): string {
   const regrasFmt = (rules || '')
     .split('\n')
     .map((ln) => ln.trim())
@@ -77,6 +84,8 @@ export function buildSystemText(pillars: Pillar[], rules: string): string {
     .map((ln) => '- ' + ln)
     .join('\n');
   let head = SYSTEM_RULES.replace('{regras_usuario}', regrasFmt);
+  // idioma das notas: pt-BR (traduz) ou idioma original do vídeo
+  head = head.replace('{idioma_regra}', noteLang === 'pt-BR' ? IDIOMA_PTBR : IDIOMA_ORIGINAL);
   // pilares editáveis: o enum do schema acompanha os pilares atuais
   const enumStr = [...pillars.map((p) => p.id), 'nenhum'].join(' | ');
   head = head.replace(DEFAULT_PILLAR_ENUM, enumStr);
@@ -263,6 +272,7 @@ function coerce(obj: Record<string, unknown>, video: VideoMeta, pillarIds: strin
     score,
     is_clickbait: obj.is_clickbait ? 1 : 0,
     neutral_title: String(obj.neutral_title || video.title || '').trim(),
+    a_real: String(obj.a_real || '').trim(),
     resumo: String(obj.resumo || '').trim(),
     pontos_chave: Array.isArray(obj.pontos_chave) ? (obj.pontos_chave as string[]) : [],
     fatos: Array.isArray(obj.fatos_para_memorizar)
@@ -278,6 +288,7 @@ export interface BrainOptions {
   model: string;
   pillars: Pillar[];
   rules: string;
+  noteLang?: NoteLang; // idioma das notas (default: 'original')
 }
 
 const MAX_RETRIES = 2; // como no desktop: JSON inválido → tenta de novo
@@ -287,7 +298,7 @@ async function analyzeOnce(
   parts: GeminiPart[],
   opts: BrainOptions,
 ): Promise<Analysis> {
-  const system = buildSystemText(opts.pillars, opts.rules);
+  const system = buildSystemText(opts.pillars, opts.rules, opts.noteLang);
   let lastErr: unknown = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const { text } = await callGemini({

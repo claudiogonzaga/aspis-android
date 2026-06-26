@@ -23,6 +23,11 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { StarsRuler } from '../components/StarsRuler';
 import { MODEL_PRESETS } from '../constants/defaults';
 import { GEMINI_VOICES } from '../services/geminiTTS';
+import {
+  checkForUpdate,
+  getCurrentVersion,
+  type UpdateInfo,
+} from '../services/updateChecker';
 import { useReadAloud } from '../hooks/useReadAloud';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../navigation/types';
@@ -53,12 +58,14 @@ export function SettingsScreen({ navigation }: Props) {
     minStars,
     period,
     ttsVoice,
+    noteLang,
     setGeminiKey,
     setModel,
     setRules,
     setMinStars,
     setPeriod,
     setTtsVoice,
+    setNoteLang,
     googleSignIn,
     googleSignOut,
   } = useAppStore();
@@ -69,6 +76,27 @@ export function SettingsScreen({ navigation }: Props) {
   const [rulesDraft, setRulesDraft] = useState(rules);
   const [rulesSaved, setRulesSaved] = useState(false);
   const sample = useReadAloud();
+
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [upToDate, setUpToDate] = useState(false);
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpToDate(false);
+    try {
+      const info = await checkForUpdate(true);
+      setUpdateInfo(info);
+      setUpToDate(!info.available);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const downloadUpdate = () => {
+    const url = updateInfo?.downloadUrl ?? updateInfo?.releaseUrl;
+    if (url) Linking.openURL(url);
+  };
 
   const maskedKey = geminiKey
     ? `••••••••${geminiKey.slice(-4)}`
@@ -209,6 +237,29 @@ export function SettingsScreen({ navigation }: Props) {
         </Section>
 
         <Section
+          title="Idioma das notas"
+          sub="Em que idioma a IA escreve resumo, pontos-chave, evidências e citações."
+        >
+          <View style={styles.chips}>
+            <Chip
+              label="Português (pt-BR)"
+              active={noteLang === 'pt-BR'}
+              onPress={() => setNoteLang('pt-BR')}
+            />
+            <Chip
+              label="Idioma original do vídeo"
+              active={noteLang === 'original'}
+              onPress={() => setNoteLang('original')}
+            />
+          </View>
+          <Text style={styles.voiceDesc}>
+            {noteLang === 'pt-BR'
+              ? 'Vídeos em outro idioma são traduzidos para o português.'
+              : 'Cada nota fica no idioma original do vídeo (igual ao desktop).'}
+          </Text>
+        </Section>
+
+        <Section
           title="Pilares"
           sub="Os seus objetivos de vida — a IA classifica e pontua cada vídeo por eles."
         >
@@ -267,6 +318,42 @@ export function SettingsScreen({ navigation }: Props) {
             <PeriodSegment value={period} onChange={setPeriod} />
           </View>
         </Section>
+
+        <Section title="Atualizações" sub="O app é distribuído por APK no GitHub.">
+          <View style={styles.versionRow}>
+            <Text style={styles.versionLabel}>Versão instalada</Text>
+            <Text style={styles.versionValue}>v{getCurrentVersion()}</Text>
+          </View>
+
+          {updateInfo?.available && updateInfo.latestVersion ? (
+            <View style={styles.updateBox}>
+              <Text style={styles.updateTitle}>
+                Nova versão disponível: v{updateInfo.latestVersion}
+              </Text>
+              {updateInfo.notes ? (
+                <Text style={styles.updateNotes} numberOfLines={6}>
+                  {updateInfo.notes}
+                </Text>
+              ) : null}
+              <Button
+                label={updateInfo.downloadUrl ? 'Baixar APK' : 'Abrir release no GitHub'}
+                onPress={downloadUpdate}
+                style={{ marginTop: spacing.md }}
+              />
+            </View>
+          ) : (
+            <Button
+              label={checkingUpdate ? 'Verificando…' : 'Verificar atualizações'}
+              variant="secondary"
+              disabled={checkingUpdate}
+              onPress={handleCheckUpdate}
+              style={{ marginTop: spacing.md }}
+            />
+          )}
+          {upToDate && !updateInfo?.available && (
+            <Text style={styles.upToDate}>✓ Você está na versão mais recente.</Text>
+          )}
+        </Section>
       </ScrollView>
     </ScreenContainer>
   );
@@ -310,6 +397,30 @@ const styles = StyleSheet.create({
   link: { ...typography.small, color: colors.accent.gold },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   voiceDesc: { ...typography.small, color: colors.text.secondary, marginTop: spacing.sm },
+  versionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  versionLabel: { ...typography.small, color: colors.text.secondary },
+  versionValue: { ...typography.bodyMedium, color: colors.text.primary },
+  updateBox: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accent.gold,
+    backgroundColor: colors.bg.surface,
+  },
+  updateTitle: { ...typography.bodyMedium, color: colors.text.primary },
+  updateNotes: {
+    ...typography.small,
+    color: colors.text.secondary,
+    marginTop: spacing.sm,
+    lineHeight: 18,
+  },
+  upToDate: { ...typography.small, color: colors.accent.success, marginTop: spacing.md },
   sampleBtn: {
     alignSelf: 'flex-start',
     marginTop: spacing.md,

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS videos (
     original_title TEXT, neutral_title TEXT,
     url TEXT, published_at TEXT, duration TEXT,
     pillar TEXT, score INTEGER, is_clickbait INTEGER,
+    a_real TEXT,
     resumo TEXT, pontos_chave TEXT, fatos TEXT, citacoes TEXT,
     evidencias TEXT,
     transcript_available INTEGER,
@@ -46,6 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_qa_video ON qa(video_id, id);
 // bancos já existentes (ADD COLUMN é idempotente via checagem do PRAGMA).
 const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
   { table: 'videos', column: 'evidencias', ddl: "ALTER TABLE videos ADD COLUMN evidencias TEXT" },
+  { table: 'videos', column: 'a_real', ddl: 'ALTER TABLE videos ADD COLUMN a_real TEXT' },
   { table: 'qa', column: 'kind', ddl: "ALTER TABLE qa ADD COLUMN kind TEXT NOT NULL DEFAULT 'ask'" },
   { table: 'qa', column: 'sources', ddl: "ALTER TABLE qa ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'" },
   { table: 'qa', column: 'saved_note', ddl: 'ALTER TABLE qa ADD COLUMN saved_note INTEGER NOT NULL DEFAULT 0' },
@@ -134,7 +136,7 @@ export function upsertVideo(v: UpsertInput): void {
   const cols = [
     'video_id', 'channel', 'channel_id', 'original_title', 'neutral_title',
     'url', 'published_at', 'duration', 'pillar', 'score', 'is_clickbait',
-    'resumo', 'pontos_chave', 'fatos', 'citacoes', 'evidencias',
+    'a_real', 'resumo', 'pontos_chave', 'fatos', 'citacoes', 'evidencias',
     'transcript_available', 'content_source', 'fetched_at', 'transcript_text',
     'channel_thumb',
   ];

@@ -1,10 +1,11 @@
 // Feed de inscrições ranqueado — port da lista do desktop (ui/index.html):
 // chips de pilar, régua de estrelas mínimas, período Dia/Semana/Mês,
 // "Mostrar lidos", expansão inline da síntese e rodapé com os filtrados.
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
+  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -25,6 +26,7 @@ import { getAccessToken, NotSignedInError } from '../services/auth';
 import { GeminiError, NoGeminiKeyError } from '../services/brain';
 import * as db from '../services/db';
 import { refreshFeed } from '../services/pipeline';
+import { checkForUpdate, type UpdateInfo } from '../services/updateChecker';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
@@ -38,6 +40,7 @@ export function FeedScreen({ navigation }: Props) {
     model,
     pillars,
     rules,
+    noteLang,
     minStars,
     period,
     showRead,
@@ -53,6 +56,16 @@ export function FeedScreen({ navigation }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [banner, setBanner] = useState<{ kind: 'info' | 'ok' | 'err'; text: string; toSettings?: boolean } | null>(null);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+
+  // Checa atualização ao abrir (throttle de 6h dentro do serviço).
+  useEffect(() => {
+    checkForUpdate(false)
+      .then((info) => {
+        if (info.available) setUpdate(info);
+      })
+      .catch(() => {});
+  }, []);
 
   const sinceIso = useMemo(
     () => new Date(Date.now() - PERIODS[period] * 3600 * 1000).toISOString(),
@@ -97,7 +110,7 @@ export function FeedScreen({ navigation }: Props) {
       const token = await getAccessToken();
       const result = await refreshFeed(
         token,
-        { apiKey: geminiKey, model, pillars, rules },
+        { apiKey: geminiKey, model, pillars, rules, noteLang },
         period,
         minStars,
         (p) => {
@@ -131,18 +144,36 @@ export function FeedScreen({ navigation }: Props) {
     } finally {
       setRefreshing(false);
     }
-  }, [user, geminiKey, model, pillars, rules, period, minStars, googleSignIn, bumpFeed]);
+  }, [user, geminiKey, model, pillars, rules, noteLang, period, minStars, googleSignIn, bumpFeed]);
 
   const header = (
     <View style={styles.header}>
+      {update?.available && update.latestVersion && (
+        <Pressable
+          onPress={() => {
+            const url = update.downloadUrl ?? update.releaseUrl;
+            if (url) Linking.openURL(url);
+          }}
+          style={styles.updateBanner}
+        >
+          <Text style={styles.updateBannerText}>
+            ⬇ Nova versão v{update.latestVersion} disponível — toque para baixar
+          </Text>
+        </Pressable>
+      )}
       <View style={styles.topbar}>
         <View style={styles.wordmark}>
           <Image source={require('../../assets/logo-mark.png')} style={styles.logo} />
           <Text style={styles.appName}>Aspis</Text>
         </View>
-        <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={10}>
-          <Text style={styles.gear}>⚙</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => navigation.navigate('Notes')} hitSlop={10}>
+            <Text style={styles.headerAction}>Notas</Text>
+          </Pressable>
+          <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={10}>
+            <Text style={styles.gear}>⚙</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.metaRow}>
@@ -273,10 +304,29 @@ const styles = StyleSheet.create({
   // da moldura de meandro, sem o escudo/logo sobrepor a borda.
   list: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl },
   header: { paddingTop: spacing.xl + spacing.xs, paddingBottom: spacing.sm },
+  updateBanner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg.surfaceStrong,
+    borderColor: colors.accent.gold,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  updateBannerText: {
+    ...typography.bodyMedium,
+    fontSize: 14,
+    color: colors.text.primary,
+    textAlign: 'center',
+  },
   topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   logo: { width: 44, height: 44, borderRadius: 22 },
   appName: { ...typography.title, color: colors.text.primary },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  headerAction: { ...typography.bodyMedium, fontSize: 15, color: colors.accent.gold },
   gear: { fontSize: 22, color: colors.text.secondary },
   metaRow: {
     flexDirection: 'row',

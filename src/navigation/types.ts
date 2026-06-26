@@ -3,4 +3,6 @@ export type RootStackParamList = {
   Share: { sharedText: string };
   Settings: undefined;
   PillarEdit: { pillarId?: string };
+  Notes: undefined;
+  NoteReader: { fileId: string; name: string };
 };

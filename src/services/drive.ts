@@ -115,3 +115,56 @@ export async function saveMarkdown(
   });
   return { id: created.id, updated: false };
 }
+
+// --- Leitor de notas (vault inteiro) — precisa do escopo drive.readonly -------
+
+export interface VaultNote {
+  id: string;
+  name: string; // nome do arquivo, ex.: "Título (videoId).md"
+  modifiedTime: string;
+  webViewLink: string; // abrir no Drive (navegador)
+}
+
+// Lista TODOS os .md da pasta Aspis (inclui os criados no desktop). Requer
+// drive.readonly — com drive.file só apareceriam os que o app criou.
+export async function listVaultNotes(token: string): Promise<VaultNote[]> {
+  const folderId = await ensureAspisFolder(token);
+  const q =
+    `'${folderId}' in parents and trashed = false and ` +
+    `(mimeType = 'text/markdown' or name contains '.md')`;
+  const out: VaultNote[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: 'nextPageToken, files(id,name,modifiedTime,webViewLink)',
+      orderBy: 'modifiedTime desc',
+      pageSize: '200',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+    const page = await driveFetch(`${FILES}?${params.toString()}`, token);
+    for (const f of page?.files ?? []) {
+      if (typeof f.name === 'string' && f.name.toLowerCase().endsWith('.md')) {
+        out.push({
+          id: f.id,
+          name: f.name,
+          modifiedTime: f.modifiedTime ?? '',
+          webViewLink: f.webViewLink ?? '',
+        });
+      }
+    }
+    pageToken = page?.nextPageToken;
+  } while (pageToken);
+  return out;
+}
+
+// Baixa o conteúdo Markdown de uma nota (alt=media devolve o texto cru).
+export async function readNoteText(token: string, fileId: string): Promise<string> {
+  const resp = await fetch(`${FILES}/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) {
+    throw new DriveError(`Google Drive HTTP ${resp.status}`, resp.status);
+  }
+  return resp.text();
+}

@@ -40,6 +40,7 @@ export interface Analysis {
   score: number; // 0–100
   is_clickbait: 0 | 1;
   neutral_title: string;
+  a_real: string; // veredito direto "mandando a real" — lead da nota
   resumo: string;
   pontos_chave: string[];
   fatos: Fato[];
@@ -103,6 +104,10 @@ export interface QAItem {
 }
 
 export type Period = 'day' | 'week' | 'month';
+
+// Idioma das notas geradas: 'original' = idioma do vídeo (padrão do desktop);
+// 'pt-BR' = sempre português, traduzindo vídeos em outros idiomas.
+export type NoteLang = 'original' | 'pt-BR';
 
 export interface Transcript {
   available: boolean;

@@ -17,7 +17,7 @@ import {
 import { DEFAULT_GEMINI_VOICE, isValidVoice } from '../services/geminiTTS';
 import { configureGoogle, restoreSignIn, signIn, signOutGoogle } from '../services/auth';
 import * as db from '../services/db';
-import type { GoogleUser, Period, Pillar } from '../types';
+import type { GoogleUser, NoteLang, Period, Pillar } from '../types';
 
 const SECURE_KEY = 'gemini_api_key';
 const K = {
@@ -28,6 +28,7 @@ const K = {
   period: 'aspis:period',
   showRead: 'aspis:showRead',
   ttsVoice: 'aspis:ttsVoice',
+  noteLang: 'aspis:noteLang',
 } as const;
 
 interface AppState {
@@ -40,6 +41,7 @@ interface AppState {
   period: Period;
   showRead: boolean;
   ttsVoice: string; // voz do Gemini para a leitura em voz alta
+  noteLang: NoteLang; // idioma das notas geradas
   user: GoogleUser | null;
   feedVersion: number; // bump → telas releem o SQLite
 
@@ -52,6 +54,7 @@ interface AppState {
   setPeriod: (p: Period) => Promise<void>;
   setShowRead: (v: boolean) => Promise<void>;
   setTtsVoice: (v: string) => Promise<void>;
+  setNoteLang: (v: NoteLang) => Promise<void>;
   googleSignIn: () => Promise<GoogleUser | null>;
   googleSignOut: () => Promise<void>;
   bumpFeed: () => void;
@@ -80,6 +83,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   period: DEFAULT_PERIOD,
   showRead: false,
   ttsVoice: DEFAULT_GEMINI_VOICE,
+  noteLang: 'pt-BR',
   user: null,
   feedVersion: 0,
 
@@ -112,6 +116,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ttsVoice: isValidVoice(map.get(K.ttsVoice) || '')
         ? (map.get(K.ttsVoice) as string)
         : DEFAULT_GEMINI_VOICE,
+      noteLang: map.get(K.noteLang) === 'original' ? 'original' : 'pt-BR',
     });
 
     const user = await restoreSignIn();
@@ -162,6 +167,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const voice = isValidVoice(v) ? v : DEFAULT_GEMINI_VOICE;
     set({ ttsVoice: voice });
     await AsyncStorage.setItem(K.ttsVoice, voice);
+  },
+
+  setNoteLang: async (v: NoteLang) => {
+    set({ noteLang: v });
+    await AsyncStorage.setItem(K.noteLang, v);
   },
 
   googleSignIn: async () => {

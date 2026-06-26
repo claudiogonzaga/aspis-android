@@ -151,6 +151,13 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
 
   return (
     <View style={styles.root}>
+      {!!video.a_real && (
+        <View style={styles.aReal}>
+          <Text style={styles.aRealLabel}>A real</Text>
+          <Text style={styles.aRealText}>{video.a_real}</Text>
+        </View>
+      )}
+
       <Text style={styles.resumo}>{video.resumo}</Text>
 
       {!!video.resumo && (
@@ -265,6 +272,26 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
 
 const styles = StyleSheet.create({
   root: { marginTop: spacing.md },
+  aReal: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent.gold,
+    backgroundColor: colors.bg.surfaceStrong,
+  },
+  aRealLabel: {
+    ...typography.label,
+    color: colors.accent.gold,
+    marginBottom: 3,
+  },
+  aRealText: {
+    ...typography.body,
+    fontSize: 14.5,
+    lineHeight: 21,
+    color: colors.text.primary,
+    fontFamily: 'Inter_500Medium',
+  },
   resumo: {
     ...typography.body,
     fontSize: 14.5,
