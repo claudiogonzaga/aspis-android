@@ -2,16 +2,16 @@
   "expo": {
     "name": "Aspis",
     "slug": "aspis",
-    "version": "1.3.1",
+    "version": "1.3.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "aspis",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo-mark.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1B1F3B"
+      "backgroundColor": "#C8703F"
     },
     "ios": {
       "bundleIdentifier": "com.claudiogonzaga.aspis"
@@ -46,9 +46,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#1B1F3B",
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 220
+          "backgroundColor": "#C8703F",
+          "image": "./assets/logo-mark.png",
+          "imageWidth": 200
         }
       ],
       "expo-audio"
