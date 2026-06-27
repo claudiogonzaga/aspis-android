@@ -265,7 +265,7 @@ export function clearClips(videoId: string): void {
 
 // --- Pular / 👎 + canais silenciados (L1) + dataset de feedback (L2) ---------
 
-const AUTO_MUTE_SKIPS = 3; // pular N vídeos de um canal (sem salvar nenhum) → silencia
+const AUTO_MUTE_SKIPS = 10; // pular N vídeos de um canal (sem salvar nenhum) → silencia
 
 export interface ChannelPref {
   channel_id: string;
