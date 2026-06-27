@@ -70,8 +70,10 @@ export function StarsRuler({ value, onChange }: Props) {
                     width: selected ? 18 : DOT_R * 2,
                     height: selected ? 18 : DOT_R * 2,
                     borderRadius: selected ? 9 : DOT_R,
-                    backgroundColor: selected ? alignColor(lvl) : colors.bg.surfaceStrong,
-                    borderColor: selected ? colors.bg.primary : colors.border,
+                    // sempre a cor da linha naquele nível; anel claro fininho
+                    // (creme) só para separar do gradiente — nunca preto.
+                    backgroundColor: alignColor(lvl),
+                    borderColor: colors.text.onGold,
                     top: selected ? 5 : 7,
                   },
                 ]}
@@ -105,6 +107,6 @@ const styles = StyleSheet.create({
   },
   dot: {
     position: 'absolute',
-    borderWidth: 2,
+    borderWidth: 1.5,
   },
 });
