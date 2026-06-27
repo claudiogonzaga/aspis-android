@@ -1,7 +1,7 @@
 // Configurações: conta Google + Drive, chave Gemini (SecureStore), modelo,
 // voz da leitura (Gemini TTS), pilares (CRUD), regras extras da IA e defaults
 // de exibição.
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -22,6 +22,8 @@ import { PeriodSegment } from '../components/PeriodSegment';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StarsRuler } from '../components/StarsRuler';
 import { MODEL_PRESETS } from '../constants/defaults';
+import * as db from '../services/db';
+import type { ChannelPref } from '../services/db';
 import { GEMINI_VOICES } from '../services/geminiTTS';
 import {
   checkForUpdate,
@@ -60,6 +62,7 @@ export function SettingsScreen({ navigation }: Props) {
     period,
     ttsVoice,
     noteLang,
+    learnedPrefs,
     setGeminiKey,
     setModel,
     setRules,
@@ -67,8 +70,11 @@ export function SettingsScreen({ navigation }: Props) {
     setPeriod,
     setTtsVoice,
     setNoteLang,
+    setLearnedPrefs,
+    runLearning,
     googleSignIn,
     googleSignOut,
+    feedVersion,
   } = useAppStore();
 
   const [keyDraft, setKeyDraft] = useState('');
@@ -81,6 +87,34 @@ export function SettingsScreen({ navigation }: Props) {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [upToDate, setUpToDate] = useState(false);
+
+  // Aprendizado / feedback
+  const [muted, setMuted] = useState<ChannelPref[]>([]);
+  const [skipCount, setSkipCount] = useState(0);
+  const [learning, setLearning] = useState(false);
+  const [learnError, setLearnError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMuted(db.getMutedChannels());
+    setSkipCount(db.countSkips());
+  }, [feedVersion]);
+
+  const handleLearn = async () => {
+    setLearning(true);
+    setLearnError(null);
+    try {
+      await runLearning();
+    } catch (e) {
+      setLearnError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLearning(false);
+    }
+  };
+
+  const unmute = (c: ChannelPref) => {
+    db.setChannelState(c.channel_id, c.channel, 'allowed');
+    setMuted(db.getMutedChannels());
+  };
 
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true);
@@ -327,6 +361,56 @@ export function SettingsScreen({ navigation }: Props) {
           </View>
         </Section>
 
+        <Section
+          title="Algoritmo & feedback"
+          sub="O Aspis aprende com o que você pula (👎) e salva. Quanto mais você usa, melhor o ranqueamento."
+        >
+          <Text style={styles.fbStat}>
+            {skipCount} vídeo{skipCount === 1 ? '' : 's'} pulado{skipCount === 1 ? '' : 's'} até agora
+          </Text>
+
+          {learnedPrefs ? (
+            <View style={styles.learnedBox}>
+              <Text style={styles.learnedTitle}>Perfil aprendido</Text>
+              <Text style={styles.learnedText}>{learnedPrefs}</Text>
+              <Pressable onPress={() => setLearnedPrefs('')}>
+                <Text style={styles.learnedClear}>limpar perfil</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Text style={styles.fbHint}>
+              Ainda sem perfil. Pule e salve alguns vídeos, depois toque abaixo para o Aspis
+              destilar o seu gosto e passar a usá-lo na pontuação.
+            </Text>
+          )}
+
+          <Button
+            label={learning ? 'Aprendendo…' : 'Aprender com meu feedback'}
+            onPress={handleLearn}
+            disabled={learning}
+            style={{ marginTop: spacing.md }}
+          />
+          {learnError && <Text style={styles.fbErr}>{learnError}</Text>}
+
+          <Text style={[styles.fbStat, { marginTop: spacing.lg }]}>
+            Canais silenciados ({muted.length})
+          </Text>
+          {muted.length === 0 ? (
+            <Text style={styles.fbHint}>Nenhum. Canais que você pula muito são silenciados sozinhos.</Text>
+          ) : (
+            muted.map((c) => (
+              <View key={c.channel_id} style={styles.mutedRow}>
+                <Text style={styles.mutedName} numberOfLines={1}>
+                  {c.channel || c.channel_id}
+                </Text>
+                <Pressable onPress={() => unmute(c)} hitSlop={8}>
+                  <Text style={styles.mutedAction}>reativar</Text>
+                </Pressable>
+              </View>
+            ))
+          )}
+        </Section>
+
         <Section title="Atualizações" sub="O app é distribuído por APK no GitHub.">
           <View style={styles.versionRow}>
             <Text style={styles.versionLabel}>Versão instalada</Text>
@@ -406,6 +490,31 @@ const styles = StyleSheet.create({
   link: { ...typography.small, color: colors.accent.gold },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   voiceDesc: { ...typography.small, color: colors.text.secondary, marginTop: spacing.sm },
+  fbStat: { ...typography.small, color: colors.text.primary, fontFamily: 'Inter_600SemiBold' },
+  fbHint: { ...typography.small, color: colors.text.secondary, marginTop: spacing.xs, lineHeight: 18 },
+  fbErr: { ...typography.small, color: colors.accent.danger, marginTop: spacing.sm },
+  learnedBox: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg.surface,
+  },
+  learnedTitle: { ...typography.label, color: colors.accent.gold, marginBottom: 4 },
+  learnedText: { ...typography.small, color: colors.text.primary, lineHeight: 19 },
+  learnedClear: { ...typography.label, textTransform: 'none', letterSpacing: 0, color: colors.text.tertiary, marginTop: spacing.sm },
+  mutedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  mutedName: { ...typography.small, color: colors.text.primary, flex: 1 },
+  mutedAction: { ...typography.small, color: colors.accent.gold },
   versionRow: {
     flexDirection: 'row',
     alignItems: 'center',

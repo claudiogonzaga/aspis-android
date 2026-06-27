@@ -212,6 +212,15 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
     onDiscard?.();
   };
 
+  // Pular / 👎: esconde o vídeo e registra o sinal negativo (auto-silencia o
+  // canal se você o pula repetidamente). Alimenta o aprendizado (L1/L2).
+  const handleSkip = () => {
+    db.skipVideo(video.video_id);
+    Haptics.selectionAsync();
+    onChanged?.();
+    onDiscard?.();
+  };
+
   const nFatos = video.fatos?.length || 0;
   const firstCite = video.citacoes?.[0];
   const metaBits: string[] = [];
@@ -347,6 +356,7 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
         {context === 'feed' && (
           <ActionBtn label={read ? '✓ Lido' : 'Marcar lido'} done={read} onPress={handleToggleRead} />
         )}
+        <ActionBtn label="👎 Pular" onPress={handleSkip} />
         {context === 'share' && <ActionBtn label="Descartar" onPress={handleDiscard} />}
       </View>
 

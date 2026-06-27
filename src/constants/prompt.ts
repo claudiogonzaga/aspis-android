@@ -118,3 +118,21 @@ cartões conforme a densidade do texto (lista vazia se não houver fato memoriz�
 
 Responda APENAS com o JSON, sem texto antes ou depois, neste formato exato:
 {"fatos": []}`;
+
+// L2 — destila o feedback do usuário (vídeos que ele PULOU vs SALVOU/DESTACOU)
+// num "perfil aprendido" que será injetado no prompt de pontuação. É o loop de
+// preferência que adapta o algoritmo do usuário ao longo do tempo.
+export const DISTILL_SYSTEM = `Você analisa o COMPORTAMENTO de um usuário de um curador de vídeos para inferir \
+as preferências dele. Recebe dois conjuntos: vídeos que ele PULOU (rejeitou) e \
+vídeos que ele SALVOU/DESTACOU (valorizou). Sua tarefa é resumir o padrão num \
+PERFIL acionável que ajude a pontuar vídeos FUTUROS.
+
+Regras:
+- Infira temas, estilos, canais, formatos e "iscas" que ele EVITA, e o que ele \
+PRIORIZA. Seja específico e concreto (cite canais/temas quando o sinal for claro).
+- NÃO invente preferências sem evidência nos exemplos. Se o sinal for fraco, diga.
+- Escreva em português, em até ~8 bullets curtos, em tom de instrução para o \
+curador (ex.: "Evite vídeos de X do canal Y"; "Priorize Z aprofundado").
+- Comece com "Penalize:" os padrões a evitar e depois "Priorize:" os a favorecer.
+
+Responda APENAS com o texto do perfil (os bullets), sem preâmbulo.`;

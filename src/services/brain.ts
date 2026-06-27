@@ -18,12 +18,14 @@ import {
 import {
   ASK_SYSTEM,
   DEFAULT_PILLAR_ENUM,
+  DISTILL_SYSTEM,
   FACTCHECK_SYSTEM,
   FLASHCARD_SYSTEM,
   IDIOMA_ORIGINAL,
   IDIOMA_PTBR,
   SYSTEM_RULES,
 } from '../constants/prompt';
+import type { FeedbackVideo } from './db';
 import type {
   Analysis,
   ContentSource,
@@ -76,6 +78,7 @@ export function buildSystemText(
   pillars: Pillar[],
   rules: string,
   noteLang: NoteLang = 'original',
+  learnedPrefs = '',
 ): string {
   const regrasFmt = (rules || '')
     .split('\n')
@@ -89,7 +92,15 @@ export function buildSystemText(
   // pilares editáveis: o enum do schema acompanha os pilares atuais
   const enumStr = [...pillars.map((p) => p.id), 'nenhum'].join(' | ');
   head = head.replace(DEFAULT_PILLAR_ENUM, enumStr);
-  return head + '\n\n' + pillarsBlock(pillars);
+  let out = head + '\n\n' + pillarsBlock(pillars);
+  // L2: perfil aprendido do feedback (pular vs salvar) ajusta o score
+  if (learnedPrefs.trim()) {
+    out +=
+      '\n\nPERFIL APRENDIDO DO USUÁRIO (do que ele pulou vs salvou — use para ' +
+      'ajustar o score, SEM ignorar os pilares):\n' +
+      learnedPrefs.trim();
+  }
+  return out;
 }
 
 function buildUserMessage(
@@ -289,6 +300,7 @@ export interface BrainOptions {
   pillars: Pillar[];
   rules: string;
   noteLang?: NoteLang; // idioma das notas (default: 'original')
+  learnedPrefs?: string; // L2: perfil aprendido do feedback do usuário
 }
 
 const MAX_RETRIES = 2; // como no desktop: JSON inválido → tenta de novo
@@ -298,7 +310,7 @@ async function analyzeOnce(
   parts: GeminiPart[],
   opts: BrainOptions,
 ): Promise<Analysis> {
-  const system = buildSystemText(opts.pillars, opts.rules, opts.noteLang);
+  const system = buildSystemText(opts.pillars, opts.rules, opts.noteLang, opts.learnedPrefs);
   let lastErr: unknown = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const { text } = await callGemini({
@@ -504,4 +516,33 @@ export async function makeFlashcards(
     }
   }
   return fatos;
+}
+
+// --- L2: destila o feedback num "perfil aprendido" ---------------------------
+// Recebe os vídeos pulados (negativos) e salvos/destacados (positivos) e devolve
+// um texto de perfil que será injetado no prompt de pontuação.
+export async function distillPreferences(
+  negatives: FeedbackVideo[],
+  positives: FeedbackVideo[],
+  opts: Pick<BrainOptions, 'apiKey' | 'model'>,
+): Promise<string> {
+  const fmt = (v: FeedbackVideo) =>
+    `- [${v.pillar}] ${v.neutral_title || v.original_title} (${v.channel})` +
+    (v.resumo ? ` — ${v.resumo.slice(0, 160)}` : '');
+  const body = [
+    'VÍDEOS QUE O USUÁRIO PULOU (rejeitou):',
+    negatives.length ? negatives.map(fmt).join('\n') : '(nenhum)',
+    '',
+    'VÍDEOS QUE O USUÁRIO SALVOU/DESTACOU (valorizou):',
+    positives.length ? positives.map(fmt).join('\n') : '(nenhum)',
+  ].join('\n');
+  const { text } = await callGemini({
+    apiKey: opts.apiKey,
+    model: opts.model,
+    system: DISTILL_SYSTEM,
+    parts: [{ text: body }],
+    json: false,
+    maxTokens: 900,
+  });
+  return (text || '').trim();
 }

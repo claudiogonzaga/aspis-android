@@ -62,8 +62,11 @@ export async function refreshFeed(
   const channelIds = await getSubscriptions(token);
   const { uploads, thumbs } = await getUploadsAndThumbs(token, channelIds);
 
-  // vídeos novos por canal (paralelismo leve — 1 unidade de quota por chamada)
-  const playlists = Object.values(uploads);
+  // canais silenciados (L1) nem são consultados — economiza quota e some do feed
+  const muted = new Set(db.mutedChannelIds());
+  const playlists = Object.entries(uploads)
+    .filter(([channelId]) => !muted.has(channelId))
+    .map(([, playlistId]) => playlistId);
   let listed = 0;
   const idLists = await mapLimit(playlists, 5, async (playlistId) => {
     const ids = await getNewVideoIds(token, playlistId, sinceIso, MAX_VIDEOS_PER_CHANNEL);

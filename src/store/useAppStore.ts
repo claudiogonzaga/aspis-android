@@ -23,6 +23,7 @@ import {
   signOutGoogle,
 } from '../services/auth';
 import { getMyChannel } from '../services/youtube';
+import { distillPreferences } from '../services/brain';
 import * as db from '../services/db';
 import type { GoogleUser, NoteLang, Period, Pillar, YtChannel } from '../types';
 
@@ -37,6 +38,7 @@ const K = {
   ttsVoice: 'aspis:ttsVoice',
   noteLang: 'aspis:noteLang',
   channel: 'aspis:channel',
+  learnedPrefs: 'aspis:learnedPrefs',
 } as const;
 
 interface AppState {
@@ -50,6 +52,7 @@ interface AppState {
   showRead: boolean;
   ttsVoice: string; // voz do Gemini para a leitura em voz alta
   noteLang: NoteLang; // idioma das notas geradas
+  learnedPrefs: string; // L2: perfil aprendido do feedback (injetado no score)
   user: GoogleUser | null;
   channel: YtChannel | null; // canal do YouTube selecionado (com avatar)
   feedVersion: number; // bump → telas releem o SQLite
@@ -64,6 +67,8 @@ interface AppState {
   setShowRead: (v: boolean) => Promise<void>;
   setTtsVoice: (v: string) => Promise<void>;
   setNoteLang: (v: NoteLang) => Promise<void>;
+  setLearnedPrefs: (v: string) => Promise<void>;
+  runLearning: () => Promise<string>; // destila o feedback → perfil aprendido
   googleSignIn: () => Promise<GoogleUser | null>;
   googleSignOut: () => Promise<void>;
   refreshChannel: () => Promise<void>;
@@ -94,6 +99,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showRead: false,
   ttsVoice: DEFAULT_GEMINI_VOICE,
   noteLang: 'pt-BR',
+  learnedPrefs: '',
   user: null,
   channel: null,
   feedVersion: 0,
@@ -131,6 +137,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? (map.get(K.ttsVoice) as string)
         : DEFAULT_GEMINI_VOICE,
       noteLang: map.get(K.noteLang) === 'original' ? 'original' : 'pt-BR',
+      learnedPrefs: map.get(K.learnedPrefs) || '',
     });
 
     // canal do YT persistido (mostra na hora; revalida em segundo plano)
@@ -195,6 +202,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   setNoteLang: async (v: NoteLang) => {
     set({ noteLang: v });
     await AsyncStorage.setItem(K.noteLang, v);
+  },
+
+  setLearnedPrefs: async (v: string) => {
+    set({ learnedPrefs: v });
+    await AsyncStorage.setItem(K.learnedPrefs, v);
+  },
+
+  // L2: destila os vídeos pulados (negativos) e salvos/destacados (positivos)
+  // num perfil que passa a ajustar a pontuação dos próximos vídeos.
+  runLearning: async () => {
+    const { geminiKey, model } = get();
+    if (!geminiKey) throw new Error('Configure a chave do Gemini para aprender com o feedback.');
+    const { negatives, positives } = db.getFeedbackExamples(40);
+    if (negatives.length + positives.length < 3) {
+      throw new Error('Poucos sinais ainda — pule ou salve mais alguns vídeos primeiro.');
+    }
+    const prefs = await distillPreferences(negatives, positives, { apiKey: geminiKey, model });
+    set({ learnedPrefs: prefs });
+    await AsyncStorage.setItem(K.learnedPrefs, prefs);
+    return prefs;
   },
 
   googleSignIn: async () => {

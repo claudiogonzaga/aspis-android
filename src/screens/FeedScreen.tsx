@@ -41,6 +41,7 @@ export function FeedScreen({ navigation }: Props) {
     pillars,
     rules,
     noteLang,
+    learnedPrefs,
     minStars,
     period,
     showRead,
@@ -110,7 +111,7 @@ export function FeedScreen({ navigation }: Props) {
       const token = await getAccessToken();
       const result = await refreshFeed(
         token,
-        { apiKey: geminiKey, model, pillars, rules, noteLang },
+        { apiKey: geminiKey, model, pillars, rules, noteLang, learnedPrefs },
         period,
         minStars,
         (p) => {
@@ -144,7 +145,7 @@ export function FeedScreen({ navigation }: Props) {
     } finally {
       setRefreshing(false);
     }
-  }, [user, geminiKey, model, pillars, rules, noteLang, period, minStars, googleSignIn, bumpFeed]);
+  }, [user, geminiKey, model, pillars, rules, noteLang, learnedPrefs, period, minStars, googleSignIn, bumpFeed]);
 
   const header = (
     <View style={styles.header}>

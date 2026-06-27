@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS videos (
     fetched_at TEXT,
     read INTEGER DEFAULT 0,
     saved_drive INTEGER DEFAULT 0,
+    skipped INTEGER DEFAULT 0,
     transcript_text TEXT,
     channel_thumb TEXT
 );
@@ -51,6 +52,12 @@ CREATE TABLE IF NOT EXISTS clips (
     created_at TEXT NOT NULL,
     PRIMARY KEY (video_id, block_key)
 );
+CREATE TABLE IF NOT EXISTS channel_prefs (
+    channel_id TEXT PRIMARY KEY,
+    channel TEXT NOT NULL,
+    state TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 `;
 
 // Colunas adicionadas depois do schema original — aplicadas com ALTER TABLE em
@@ -61,10 +68,11 @@ const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
   { table: 'qa', column: 'kind', ddl: "ALTER TABLE qa ADD COLUMN kind TEXT NOT NULL DEFAULT 'ask'" },
   { table: 'qa', column: 'sources', ddl: "ALTER TABLE qa ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'" },
   { table: 'qa', column: 'saved_note', ddl: 'ALTER TABLE qa ADD COLUMN saved_note INTEGER NOT NULL DEFAULT 0' },
+  { table: 'videos', column: 'skipped', ddl: 'ALTER TABLE videos ADD COLUMN skipped INTEGER DEFAULT 0' },
 ];
 
 const JSON_FIELDS = ['pontos_chave', 'fatos', 'citacoes', 'evidencias'] as const;
-const FLAGS = ['read', 'saved_drive'] as const;
+const FLAGS = ['read', 'saved_drive', 'skipped'] as const;
 export type Flag = (typeof FLAGS)[number];
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -180,7 +188,9 @@ export interface VideoQuery {
 }
 
 export function getVideos(q: VideoQuery = {}): VideoRecord[] {
-  let sql = 'SELECT * FROM videos WHERE score >= ?';
+  let sql =
+    'SELECT * FROM videos WHERE score >= ? AND COALESCE(skipped, 0) = 0 ' +
+    "AND channel_id NOT IN (SELECT channel_id FROM channel_prefs WHERE state = 'muted')";
   const args: SQLite.SQLiteBindValue[] = [q.minScore ?? 0];
   if (!q.includeRead) sql += ' AND COALESCE(read, 0) = 0';
   if (q.pillar) {
@@ -251,6 +261,113 @@ export function replaceClips(
 
 export function clearClips(videoId: string): void {
   conn().runSync('DELETE FROM clips WHERE video_id = ?', [videoId]);
+}
+
+// --- Pular / 👎 + canais silenciados (L1) + dataset de feedback (L2) ---------
+
+const AUTO_MUTE_SKIPS = 3; // pular N vídeos de um canal (sem salvar nenhum) → silencia
+
+export interface ChannelPref {
+  channel_id: string;
+  channel: string;
+  state: 'muted' | 'allowed';
+  updated_at: string;
+}
+
+export interface FeedbackVideo {
+  neutral_title: string;
+  original_title: string;
+  channel: string;
+  pillar: string;
+  resumo: string;
+  score: number;
+}
+
+// Pula o vídeo (some do feed) e, se o canal acumular skips SEM nenhum
+// salvamento, auto-silencia o canal — a menos que o usuário já tenha decidido.
+export function skipVideo(videoId: string): void {
+  const d = conn();
+  d.runSync('UPDATE videos SET skipped = 1 WHERE video_id = ?', [videoId]);
+  const v = d.getFirstSync<{ channel_id: string; channel: string }>(
+    'SELECT channel_id, channel FROM videos WHERE video_id = ?',
+    [videoId],
+  );
+  if (!v?.channel_id) return;
+  const decided = d.getFirstSync<{ n: number }>(
+    'SELECT 1 AS n FROM channel_prefs WHERE channel_id = ?',
+    [v.channel_id],
+  );
+  if (decided) return; // já está 'muted' ou 'allowed' → não auto-altera
+  const stats = d.getFirstSync<{ skips: number; saves: number }>(
+    `SELECT SUM(CASE WHEN COALESCE(skipped,0)=1 THEN 1 ELSE 0 END) AS skips,
+            SUM(CASE WHEN COALESCE(saved_drive,0)=1 THEN 1 ELSE 0 END) AS saves
+       FROM videos WHERE channel_id = ?`,
+    [v.channel_id],
+  );
+  if ((stats?.skips ?? 0) >= AUTO_MUTE_SKIPS && (stats?.saves ?? 0) === 0) {
+    d.runSync(
+      'INSERT OR REPLACE INTO channel_prefs (channel_id, channel, state, updated_at) VALUES (?,?,?,?)',
+      [v.channel_id, v.channel || '', 'muted', nowIso()],
+    );
+  }
+}
+
+export function unskipVideo(videoId: string): void {
+  conn().runSync('UPDATE videos SET skipped = 0 WHERE video_id = ?', [videoId]);
+}
+
+export function getMutedChannels(): ChannelPref[] {
+  return conn().getAllSync<ChannelPref>(
+    "SELECT channel_id, channel, state, updated_at FROM channel_prefs WHERE state = 'muted' ORDER BY updated_at DESC",
+  );
+}
+
+export function setChannelState(
+  channelId: string,
+  channel: string,
+  state: 'muted' | 'allowed',
+): void {
+  conn().runSync(
+    'INSERT OR REPLACE INTO channel_prefs (channel_id, channel, state, updated_at) VALUES (?,?,?,?)',
+    [channelId, channel, state, nowIso()],
+  );
+}
+
+export function mutedChannelIds(): string[] {
+  return conn()
+    .getAllSync<{ channel_id: string }>(
+      "SELECT channel_id FROM channel_prefs WHERE state = 'muted'",
+    )
+    .map((r) => r.channel_id);
+}
+
+export function countSkips(): number {
+  return (
+    conn().getFirstSync<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM videos WHERE COALESCE(skipped,0)=1',
+    )?.n ?? 0
+  );
+}
+
+// Exemplos rotulados para a destilação L2: negativos = pulados; positivos =
+// salvos no Drive OU com algum Destaque.
+export function getFeedbackExamples(limit = 40): {
+  negatives: FeedbackVideo[];
+  positives: FeedbackVideo[];
+} {
+  const sel = 'neutral_title, original_title, channel, pillar, resumo, score';
+  const negatives = conn().getAllSync<FeedbackVideo>(
+    `SELECT ${sel} FROM videos WHERE COALESCE(skipped,0)=1 ORDER BY fetched_at DESC LIMIT ?`,
+    [limit],
+  );
+  const positives = conn().getAllSync<FeedbackVideo>(
+    `SELECT ${sel} FROM videos
+       WHERE COALESCE(saved_drive,0)=1
+          OR video_id IN (SELECT DISTINCT video_id FROM clips)
+       ORDER BY fetched_at DESC LIMIT ?`,
+    [limit],
+  );
+  return { negatives, positives };
 }
 
 export function setTranscriptText(videoId: string, text: string): void {
