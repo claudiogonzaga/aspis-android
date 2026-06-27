@@ -51,6 +51,7 @@ function Section({ title, sub, children }: { title: string; sub?: string; childr
 export function SettingsScreen({ navigation }: Props) {
   const {
     user,
+    channel,
     geminiKey,
     model,
     pillars,
@@ -120,11 +121,18 @@ export function SettingsScreen({ navigation }: Props) {
           {user ? (
             <View>
               <View style={styles.userRow}>
-                {user.photo ? (
+                {channel?.thumb ? (
+                  <Image source={{ uri: channel.thumb }} style={styles.avatar} />
+                ) : user.photo ? (
                   <Image source={{ uri: user.photo }} style={styles.avatar} />
                 ) : null}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.userName}>{user.name}</Text>
+                  <Text style={styles.userName}>{channel?.title || user.name}</Text>
+                  {channel ? (
+                    <Text style={styles.channelMeta}>
+                      ▶ Canal do YouTube{channel.handle ? ` · ${channel.handle}` : ''}
+                    </Text>
+                  ) : null}
                   <Text style={styles.userEmail}>{user.email}</Text>
                 </View>
               </View>
@@ -375,7 +383,8 @@ const styles = StyleSheet.create({
   userRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   avatar: { width: 40, height: 40, borderRadius: 20 },
   userName: { ...typography.bodyMedium, color: colors.text.primary },
-  userEmail: { ...typography.small, color: colors.text.secondary },
+  channelMeta: { ...typography.label, color: colors.accent.danger, textTransform: 'none', letterSpacing: 0, marginTop: 1 },
+  userEmail: { ...typography.small, color: colors.text.secondary, marginTop: 1 },
   driveStatus: { ...typography.small, color: colors.accent.success, marginTop: spacing.md },
   masked: { ...typography.small, color: colors.text.secondary, marginBottom: spacing.sm },
   input: {

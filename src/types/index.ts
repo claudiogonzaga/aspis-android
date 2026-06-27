@@ -120,3 +120,12 @@ export interface GoogleUser {
   name: string;
   photo: string | null;
 }
+
+// Canal do YouTube da conta (o "selecionado"), mostrado com avatar — igual ao
+// desktop.
+export interface YtChannel {
+  id: string;
+  title: string;
+  thumb: string; // URL do avatar do canal
+  handle: string; // @handle (customUrl), se houver
+}

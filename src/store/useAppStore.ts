@@ -15,9 +15,16 @@ import {
   DEFAULT_RULES,
 } from '../constants/defaults';
 import { DEFAULT_GEMINI_VOICE, isValidVoice } from '../services/geminiTTS';
-import { configureGoogle, restoreSignIn, signIn, signOutGoogle } from '../services/auth';
+import {
+  configureGoogle,
+  getAccessToken,
+  restoreSignIn,
+  signIn,
+  signOutGoogle,
+} from '../services/auth';
+import { getMyChannel } from '../services/youtube';
 import * as db from '../services/db';
-import type { GoogleUser, NoteLang, Period, Pillar } from '../types';
+import type { GoogleUser, NoteLang, Period, Pillar, YtChannel } from '../types';
 
 const SECURE_KEY = 'gemini_api_key';
 const K = {
@@ -29,6 +36,7 @@ const K = {
   showRead: 'aspis:showRead',
   ttsVoice: 'aspis:ttsVoice',
   noteLang: 'aspis:noteLang',
+  channel: 'aspis:channel',
 } as const;
 
 interface AppState {
@@ -43,6 +51,7 @@ interface AppState {
   ttsVoice: string; // voz do Gemini para a leitura em voz alta
   noteLang: NoteLang; // idioma das notas geradas
   user: GoogleUser | null;
+  channel: YtChannel | null; // canal do YouTube selecionado (com avatar)
   feedVersion: number; // bump → telas releem o SQLite
 
   init: () => Promise<void>;
@@ -57,6 +66,7 @@ interface AppState {
   setNoteLang: (v: NoteLang) => Promise<void>;
   googleSignIn: () => Promise<GoogleUser | null>;
   googleSignOut: () => Promise<void>;
+  refreshChannel: () => Promise<void>;
   bumpFeed: () => void;
 }
 
@@ -85,6 +95,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   ttsVoice: DEFAULT_GEMINI_VOICE,
   noteLang: 'pt-BR',
   user: null,
+  channel: null,
   feedVersion: 0,
 
   init: async () => {
@@ -110,7 +121,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       model: map.get(K.model) || DEFAULT_MODEL,
       pillars,
       rules: map.get(K.rules) || DEFAULT_RULES,
-      minStars: map.get(K.minStars) != null ? Number(map.get(K.minStars)) : DEFAULT_MIN_STARS,
+      minStars:
+        map.get(K.minStars) != null
+          ? Math.max(0, Math.min(4, Number(map.get(K.minStars))))
+          : DEFAULT_MIN_STARS,
       period: (map.get(K.period) as Period) || DEFAULT_PERIOD,
       showRead: map.get(K.showRead) === '1',
       ttsVoice: isValidVoice(map.get(K.ttsVoice) || '')
@@ -119,8 +133,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       noteLang: map.get(K.noteLang) === 'original' ? 'original' : 'pt-BR',
     });
 
+    // canal do YT persistido (mostra na hora; revalida em segundo plano)
+    try {
+      const raw = map.get(K.channel);
+      if (raw) set({ channel: JSON.parse(raw) as YtChannel });
+    } catch {
+      // ignora cache inválido
+    }
+
     const user = await restoreSignIn();
     set({ user, ready: true });
+    if (user) get().refreshChannel();
   },
 
   setGeminiKey: async (key: string) => {
@@ -148,7 +171,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setMinStars: async (n: number) => {
-    const v = Math.max(0, Math.min(5, Math.round(n)));
+    const v = Math.max(0, Math.min(4, Math.round(n)));
     set({ minStars: v });
     await AsyncStorage.setItem(K.minStars, String(v));
   },
@@ -176,13 +199,32 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   googleSignIn: async () => {
     const user = await signIn();
-    if (user) set({ user });
+    if (user) {
+      set({ user });
+      get().refreshChannel();
+    }
     return user;
   },
 
   googleSignOut: async () => {
     await signOutGoogle();
-    set({ user: null });
+    set({ user: null, channel: null });
+    await AsyncStorage.removeItem(K.channel);
+  },
+
+  // Busca o canal do YouTube da conta (title + avatar) e persiste. Silencioso:
+  // falha de rede/escopo não quebra o app.
+  refreshChannel: async () => {
+    try {
+      const token = await getAccessToken();
+      const ch = await getMyChannel(token);
+      if (ch) {
+        set({ channel: ch });
+        await AsyncStorage.setItem(K.channel, JSON.stringify(ch));
+      }
+    } catch {
+      // sem rede / sem permissão → mantém o cache
+    }
   },
 
   bumpFeed: () => set({ feedVersion: get().feedVersion + 1 }),

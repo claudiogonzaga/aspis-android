@@ -1,30 +1,33 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { GestureResponderEvent, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
-import { ALIGN_COLORS, alignColor, colors, typography } from '../theme';
+import { ALIGN_COLORS, ALIGN_MAX, alignColor, colors, typography } from '../theme';
 
 interface Props {
-  value: number; // estrelas mínimas, 0–5
+  value: number; // nível de alinhamento mínimo, 0–4 (escala Likert)
   onChange: (n: number) => void;
 }
 
-// Régua de gradiente do filtro de estrelas mínimas — port do .align-track do
-// desktop: arraste/toque para escolher; tocar no valor atual volta para 0.
+const DOT_R = 7; // raio do ponto; também a margem do trilho p/ não cortar os pontos
+const LEVELS = Array.from({ length: ALIGN_MAX + 1 }, (_, i) => i); // [0,1,2,3,4]
+
+// Régua de alinhamento estilo escala Likert: 5 pontos simétricos sobre a linha
+// colorida; toque/arraste seleciona o ponto mais próximo. Espelha o
+// .align-track do desktop.
 export function StarsRuler({ value, onChange }: Props) {
   const [width, setWidth] = useState(0);
   const [drag, setDrag] = useState<number | null>(null);
-  const moved = useRef(false);
 
   const current = drag ?? value;
-  const pct = current > 0 ? ((current - 0.5) / 5) * 100 : 0;
-  const thumbColor = current > 0 ? alignColor(current) : colors.text.tertiary;
+  const usable = Math.max(1, width - 2 * DOT_R);
+  const xOf = (level: number) => DOT_R + (level / ALIGN_MAX) * usable;
 
   const valueAt = (e: GestureResponderEvent) => {
     if (!width) return current;
-    const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / width));
-    return Math.round(ratio * 5);
+    const ratio = Math.max(0, Math.min(1, (e.nativeEvent.locationX - DOT_R) / usable));
+    return Math.round(ratio * ALIGN_MAX);
   };
 
   return (
@@ -35,12 +38,8 @@ export function StarsRuler({ value, onChange }: Props) {
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}
-        onResponderGrant={(e) => {
-          moved.current = false;
-          setDrag(valueAt(e));
-        }}
+        onResponderGrant={(e) => setDrag(valueAt(e))}
         onResponderMove={(e) => {
-          moved.current = true;
           const n = valueAt(e);
           if (n !== drag) setDrag(n);
         }}
@@ -48,9 +47,7 @@ export function StarsRuler({ value, onChange }: Props) {
           const n = valueAt(e);
           setDrag(null);
           Haptics.selectionAsync();
-          // toque (sem arrastar) no valor atual desliga o filtro — como no desktop
-          if (!moved.current && n === value) onChange(0);
-          else onChange(n);
+          onChange(n);
         }}
       >
         <LinearGradient
@@ -59,13 +56,28 @@ export function StarsRuler({ value, onChange }: Props) {
           end={{ x: 1, y: 0.5 }}
           style={styles.track}
         />
-        <View style={[styles.mask, { width: `${pct}%` as `${number}%` }]} />
-        <View
-          style={[
-            styles.thumb,
-            { left: `${pct}%` as `${number}%`, backgroundColor: thumbColor },
-          ]}
-        />
+        {width > 0 &&
+          LEVELS.map((lvl) => {
+            const selected = lvl === current;
+            return (
+              <View
+                key={lvl}
+                pointerEvents="none"
+                style={[
+                  styles.dot,
+                  {
+                    left: xOf(lvl) - (selected ? 9 : DOT_R),
+                    width: selected ? 18 : DOT_R * 2,
+                    height: selected ? 18 : DOT_R * 2,
+                    borderRadius: selected ? 9 : DOT_R,
+                    backgroundColor: selected ? alignColor(lvl) : colors.bg.surfaceStrong,
+                    borderColor: selected ? colors.bg.primary : colors.border,
+                    top: selected ? 5 : 7,
+                  },
+                ]}
+              />
+            );
+          })}
       </View>
       <Text style={styles.lbl}>muito alinhado</Text>
     </View>
@@ -73,11 +85,7 @@ export function StarsRuler({ value, onChange }: Props) {
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   lbl: {
     ...typography.label,
     fontSize: 10,
@@ -93,25 +101,10 @@ const styles = StyleSheet.create({
   track: {
     height: 7,
     borderRadius: 3.5,
+    marginHorizontal: DOT_R,
   },
-  mask: {
+  dot: {
     position: 'absolute',
-    left: 0,
-    top: 10.5,
-    height: 7,
-    borderTopLeftRadius: 3.5,
-    borderBottomLeftRadius: 3.5,
-    backgroundColor: colors.bg.primary,
-    opacity: 0.72,
-  },
-  thumb: {
-    position: 'absolute',
-    top: 7,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginLeft: -7,
     borderWidth: 2,
-    borderColor: colors.bg.primary,
   },
 });

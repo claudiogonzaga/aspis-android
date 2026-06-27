@@ -3,7 +3,7 @@
 //   subscriptions (1u/página) → channels (1u/50) → playlistItems (1u) →
 //   videos.list (1u/50). NUNCA usar search.list (100 unidades).
 
-import type { VideoMeta } from '../types';
+import type { VideoMeta, YtChannel } from '../types';
 import { isoDurationToHuman } from '../utils/duration';
 
 const API = 'https://www.googleapis.com/youtube/v3';
@@ -54,6 +54,17 @@ function chunks<T>(seq: T[], n: number): T[][] {
 function thumbUrl(snippet: Record<string, any>): string {
   const thumbs = snippet?.thumbnails || {};
   return (thumbs.default || thumbs.medium || {}).url || '';
+}
+
+// Canal do YouTube da conta logada (o "selecionado") — title + avatar, como o
+// desktop mostra no topo. mine=true devolve o canal padrão da conta.
+export async function getMyChannel(token: string): Promise<YtChannel | null> {
+  const resp = await yt('channels', { part: 'snippet', mine: 'true', maxResults: 1 }, token);
+  const item = (resp.items || [])[0];
+  if (!item) return null;
+  const sn = item.snippet || {};
+  const handle = sn.customUrl ? String(sn.customUrl) : '';
+  return { id: item.id, title: sn.title || '', thumb: thumbUrl(sn), handle };
 }
 
 // channel_ids das inscrições do usuário (paginado).

@@ -44,20 +44,21 @@ export const DEFAULT_RULES =
   'Vídeos de pura opinião/entretenimento, sem valor para os objetivos, vão para ' +
   "'nenhum' com score baixo.";
 
-// Score → estrelas (config.py: STAR_MIN_SCORE). 5★ = score ≥ 95.
-export const STAR_MIN_SCORE: Record<number, number> = { 0: 0, 1: 20, 2: 40, 3: 60, 4: 80, 5: 95 };
+// Score (0–100) → nível de alinhamento Likert (0–4). Limiares simétricos
+// (passo de 25), com o centro (nível 2) = score ≥ 50.
+export const STAR_MIN_SCORE: Record<number, number> = { 0: 0, 1: 25, 2: 50, 3: 75, 4: 90 };
 
 export function scoreToStars(score: number): number {
   const s = Math.max(0, Math.min(100, Math.round(score || 0)));
   let stars = 0;
-  for (const k of [1, 2, 3, 4, 5]) {
+  for (const k of [1, 2, 3, 4]) {
     if (s >= STAR_MIN_SCORE[k]) stars = k;
   }
   return stars;
 }
 
 export function starsToThreshold(stars: number): number {
-  return STAR_MIN_SCORE[Math.max(0, Math.min(5, stars))];
+  return STAR_MIN_SCORE[Math.max(0, Math.min(4, stars))];
 }
 
 // Período de exibição/busca → horas de lookback (config.py: PERIODS).
@@ -79,6 +80,6 @@ export const FLASHCARD_MAX_TOKENS = 1500; // extração de cartões de uma respo
 export const MAX_VIDEOS_PER_CHANNEL = 8; // config.yaml: max_videos_per_channel
 export const MAX_VIDEOS_PER_RUN = 25; // limite por execução (botão Atualizar)
 
-// Defaults de exibição.
-export const DEFAULT_MIN_STARS = 3; // = threshold 60 do desktop
+// Defaults de exibição. Alinhamento mínimo = centro da escala (nível 2 = 50%).
+export const DEFAULT_MIN_STARS = 2;
 export const DEFAULT_PERIOD: Period = 'day';
