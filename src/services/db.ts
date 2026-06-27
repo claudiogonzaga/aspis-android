@@ -229,21 +229,28 @@ export function getClips(videoId: string): Record<string, ClipRecord> {
   return map;
 }
 
-export function addClip(
+// Substitui a SELEÇÃO de trechos do vídeo (todos compartilham o id da única
+// nota de Destaques). Transacional: limpa e reinsere.
+export function replaceClips(
   videoId: string,
-  blockKey: string,
-  label: string,
-  title: string,
+  records: { block_key: string; label: string; title: string }[],
   driveFileId: string,
 ): void {
-  conn().runSync(
-    'INSERT OR REPLACE INTO clips (video_id, block_key, label, title, drive_file_id, created_at) VALUES (?,?,?,?,?,?)',
-    [videoId, blockKey, label, title, driveFileId, nowIso()],
-  );
+  const d = conn();
+  const now = nowIso();
+  d.withTransactionSync(() => {
+    d.runSync('DELETE FROM clips WHERE video_id = ?', [videoId]);
+    for (const r of records) {
+      d.runSync(
+        'INSERT INTO clips (video_id, block_key, label, title, drive_file_id, created_at) VALUES (?,?,?,?,?,?)',
+        [videoId, r.block_key, r.label, r.title, driveFileId, now],
+      );
+    }
+  });
 }
 
-export function removeClip(videoId: string, blockKey: string): void {
-  conn().runSync('DELETE FROM clips WHERE video_id = ? AND block_key = ?', [videoId, blockKey]);
+export function clearClips(videoId: string): void {
+  conn().runSync('DELETE FROM clips WHERE video_id = ?', [videoId]);
 }
 
 export function setTranscriptText(videoId: string, text: string): void {

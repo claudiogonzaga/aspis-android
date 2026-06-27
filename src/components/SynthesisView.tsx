@@ -19,9 +19,9 @@ import * as db from '../services/db';
 import { deleteFile, saveMarkdown } from '../services/drive';
 import {
   analysisBlocks,
-  clipFilename,
+  clipsFilename,
   noteFilename,
-  renderClipNote,
+  renderClipsNote,
   renderNote,
   synthesisAsText,
 } from '../services/notes';
@@ -89,19 +89,22 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
   const [showOriginal, setShowOriginal] = useState(false);
   const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
-  // Destaques: trechos salvos como notas atômicas no vault.
+  // Destaques: os trechos marcados ficam JUNTOS numa única nota por vídeo.
   const [clips, setClips] = useState<Record<string, ClipRecord>>({});
   const [clipBusy, setClipBusy] = useState<string | null>(null);
+  const blocks = useMemo(() => analysisBlocks(video), [video]);
   const blockByKey = useMemo(() => {
     const m: Record<string, ClipBlock> = {};
-    for (const b of analysisBlocks(video)) m[b.key] = b;
+    for (const b of blocks) m[b.key] = b;
     return m;
-  }, [video]);
+  }, [blocks]);
 
   useEffect(() => {
     setClips(db.getClips(video.video_id));
   }, [video.video_id]);
 
+  // Tocar num bloco adiciona/remove ele da seleção e REGRAVA a nota única de
+  // Destaques com todos os trechos marcados (na ordem da análise).
   const toggleClip = async (block: ClipBlock) => {
     if (clipBusy) return;
     setClipBusy(block.key);
@@ -112,16 +115,29 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
         if (!u) throw new Error('Conecte uma conta Google para salvar no Drive.');
       }
       const token = await getAccessToken();
-      const existing = clips[block.key];
-      if (existing) {
-        await deleteFile(token, existing.drive_file_id);
-        db.removeClip(video.video_id, block.key);
-        setNote({ kind: 'ok', text: 'Destaque removido do vault.' });
+      const nextKeys = new Set(Object.keys(clips));
+      if (nextKeys.has(block.key)) nextKeys.delete(block.key);
+      else nextKeys.add(block.key);
+      const selected = blocks.filter((b) => nextKeys.has(b.key));
+
+      if (selected.length === 0) {
+        const fileId = Object.values(clips)[0]?.drive_file_id;
+        if (fileId) await deleteFile(token, fileId);
+        db.clearClips(video.video_id);
+        setNote({ kind: 'ok', text: 'Destaques removidos do vault.' });
       } else {
-        const fname = clipFilename(video, block);
-        const { id } = await saveMarkdown(token, fname, renderClipNote(video, block, pillars));
-        db.addClip(video.video_id, block.key, block.label, fname, id);
-        setNote({ kind: 'ok', text: `✓ Trecho salvo como nota (${block.label}) no vault.` });
+        const { id } = await saveMarkdown(
+          token,
+          clipsFilename(video),
+          renderClipsNote(video, selected, pillars),
+        );
+        db.replaceClips(
+          video.video_id,
+          selected.map((b) => ({ block_key: b.key, label: b.label, title: b.titleHint })),
+          id,
+        );
+        const n = selected.length;
+        setNote({ kind: 'ok', text: `✓ ${n} trecho${n === 1 ? '' : 's'} na sua nota de Destaques.` });
       }
       setClips(db.getClips(video.video_id));
     } catch (e) {
@@ -215,8 +231,8 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
   return (
     <View style={styles.root}>
       <Text style={styles.clipHint}>
-        Toque em ＋ para salvar um trecho como nota no vault
-        {clipCount > 0 ? ` · ${clipCount} destaque${clipCount === 1 ? '' : 's'}` : ''}
+        Toque em ＋ nos trechos que quer lembrar — eles vão juntos para uma nota de Destaques
+        {clipCount > 0 ? ` · ${clipCount} selecionado${clipCount === 1 ? '' : 's'}` : ''}
       </Text>
 
       {!!video.a_real &&

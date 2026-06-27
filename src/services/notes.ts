@@ -194,25 +194,24 @@ export function analysisBlocks(v: VideoRecord): ClipBlock[] {
   return blocks;
 }
 
-// Nome de arquivo único e legível da nota atômica.
-export function clipFilename(v: VideoRecord, block: ClipBlock): string {
-  const stem = sanitizeFilename(block.titleHint, 48);
-  const keySafe = block.key.replace(/[:]/g, '-');
-  return `${stem} — ${block.label} (${v.video_id} ${keySafe}).md`;
+// UMA nota de Destaques por vídeo — reúne os trechos que o usuário marcou.
+export function clipsFilename(v: VideoRecord): string {
+  const stem = sanitizeFilename(v.neutral_title, 60);
+  return `Destaques — ${stem} (${v.video_id}).md`;
 }
 
-// Renderiza UM trecho como nota atômica, com link de volta para a nota do vídeo.
-export function renderClipNote(v: VideoRecord, block: ClipBlock, pillars: Pillar[]): string {
+// Renderiza a nota de Destaques com TODOS os trechos selecionados (na ordem da
+// análise), com link de volta para a nota do vídeo.
+export function renderClipsNote(v: VideoRecord, blocks: ClipBlock[], pillars: Pillar[]): string {
   const pillarName = mocNameFor(v.pillar, pillars);
   const data =
     (v.published_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
   const autor = (v.channel || '').replace(/"/g, "'");
   const back = noteBasename(v.neutral_title, v.video_id);
-  return [
+  const lines: string[] = [
     '---',
     'fonte: youtube',
-    'tipo: destaque',
-    `bloco: ${block.label}`,
+    'tipo: destaques',
     `autor: "${autor}"`,
     `pilar: ${v.pillar}`,
     `data: ${data}`,
@@ -220,11 +219,12 @@ export function renderClipNote(v: VideoRecord, block: ClipBlock, pillars: Pillar
     `tags: [destaque, ${v.pillar}, aspis]`,
     '---',
     '',
-    `# ${block.label} — ${v.neutral_title}`,
+    `# Destaques — ${v.neutral_title}`,
     '',
-    block.bodyMd,
-    '',
-    `— de [[${back}]] · [▶ assistir](${v.url || ''}) · [[${pillarName} - MOC]]`,
-    '',
-  ].join('\n');
+  ];
+  for (const b of blocks) {
+    lines.push(`**${b.label}**`, '', b.bodyMd, '');
+  }
+  lines.push(`— de [[${back}]] · [▶ assistir](${v.url || ''}) · [[${pillarName} - MOC]]`, '');
+  return lines.join('\n');
 }
