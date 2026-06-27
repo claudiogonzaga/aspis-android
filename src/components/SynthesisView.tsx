@@ -2,7 +2,7 @@
 // pontos-chave, meta (nº de fatos / primeiro trecho), citações com timestamp,
 // ações e Q&A ("Explorar este vídeo"). Usada na tela de share E na expansão
 // inline do feed.
-import { useCallback, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -16,12 +16,20 @@ import * as Haptics from 'expo-haptics';
 
 import { getAccessToken } from '../services/auth';
 import * as db from '../services/db';
-import { saveMarkdown } from '../services/drive';
-import { noteFilename, renderNote, synthesisAsText } from '../services/notes';
+import { deleteFile, saveMarkdown } from '../services/drive';
+import {
+  analysisBlocks,
+  clipFilename,
+  noteFilename,
+  renderClipNote,
+  renderNote,
+  synthesisAsText,
+} from '../services/notes';
 import { useReadAloud } from '../hooks/useReadAloud';
 import { useAppStore } from '../store/useAppStore';
-import type { Veredito, VideoRecord } from '../types';
+import type { ClipBlock, ClipRecord, Veredito, VideoRecord } from '../types';
 import { colors, radius, spacing, typography } from '../theme';
+import { ClippableBlock } from './ClippableBlock';
 import { QASection } from './QASection';
 
 const VEREDITO_UI: Record<Veredito, { label: string; color: string }> = {
@@ -80,6 +88,59 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
   const [copied, setCopied] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  // Destaques: trechos salvos como notas atômicas no vault.
+  const [clips, setClips] = useState<Record<string, ClipRecord>>({});
+  const [clipBusy, setClipBusy] = useState<string | null>(null);
+  const blockByKey = useMemo(() => {
+    const m: Record<string, ClipBlock> = {};
+    for (const b of analysisBlocks(video)) m[b.key] = b;
+    return m;
+  }, [video]);
+
+  useEffect(() => {
+    setClips(db.getClips(video.video_id));
+  }, [video.video_id]);
+
+  const toggleClip = async (block: ClipBlock) => {
+    if (clipBusy) return;
+    setClipBusy(block.key);
+    setNote(null);
+    try {
+      if (!user) {
+        const u = await googleSignIn();
+        if (!u) throw new Error('Conecte uma conta Google para salvar no Drive.');
+      }
+      const token = await getAccessToken();
+      const existing = clips[block.key];
+      if (existing) {
+        await deleteFile(token, existing.drive_file_id);
+        db.removeClip(video.video_id, block.key);
+        setNote({ kind: 'ok', text: 'Destaque removido do vault.' });
+      } else {
+        const fname = clipFilename(video, block);
+        const { id } = await saveMarkdown(token, fname, renderClipNote(video, block, pillars));
+        db.addClip(video.video_id, block.key, block.label, fname, id);
+        setNote({ kind: 'ok', text: `✓ Trecho salvo como nota (${block.label}) no vault.` });
+      }
+      setClips(db.getClips(video.video_id));
+    } catch (e) {
+      setNote({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setClipBusy(null);
+    }
+  };
+
+  // Envolve um bloco da síntese tornando-o clipável (se houver conteúdo).
+  const clip = (key: string, children: ReactNode): ReactNode => {
+    const block = blockByKey[key];
+    if (!block) return children;
+    return (
+      <ClippableBlock saved={!!clips[key]} busy={clipBusy === key} onToggle={() => toggleClip(block)}>
+        {children}
+      </ClippableBlock>
+    );
+  };
 
   const read = video.read === 1;
 
@@ -149,16 +210,25 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
         ? '■ Parar'
         : '▶ Ouvir resumo';
 
+  const clipCount = Object.keys(clips).length;
+
   return (
     <View style={styles.root}>
-      {!!video.a_real && (
-        <View style={styles.aReal}>
-          <Text style={styles.aRealLabel}>A real</Text>
-          <Text style={styles.aRealText}>{video.a_real}</Text>
-        </View>
-      )}
+      <Text style={styles.clipHint}>
+        Toque em ＋ para salvar um trecho como nota no vault
+        {clipCount > 0 ? ` · ${clipCount} destaque${clipCount === 1 ? '' : 's'}` : ''}
+      </Text>
 
-      <Text style={styles.resumo}>{video.resumo}</Text>
+      {!!video.a_real &&
+        clip(
+          'areal',
+          <View style={styles.aReal}>
+            <Text style={styles.aRealLabel}>A real</Text>
+            <Text style={styles.aRealText}>{video.a_real}</Text>
+          </View>,
+        )}
+
+      {clip('resumo', <Text style={styles.resumo}>{video.resumo}</Text>)}
 
       {!!video.resumo && (
         <View style={styles.listenWrap}>
@@ -188,9 +258,14 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
       {video.pontos_chave?.length > 0 && (
         <View style={styles.points}>
           {video.pontos_chave.map((p, i) => (
-            <View key={i} style={styles.pointRow}>
-              <Text style={styles.pointDash}>–</Text>
-              <Text style={styles.pointText}>{p}</Text>
+            <View key={i}>
+              {clip(
+                `ponto:${i}`,
+                <View style={styles.pointRow}>
+                  <Text style={styles.pointDash}>–</Text>
+                  <Text style={styles.pointText}>{p}</Text>
+                </View>,
+              )}
             </View>
           ))}
         </View>
@@ -202,16 +277,21 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
           {video.evidencias.map((e, i) => {
             const ui = VEREDITO_UI[e.veredito] ?? VEREDITO_UI.sem_evidencia;
             return (
-              <View key={i} style={styles.evidenceItem}>
-                <View style={styles.evidenceHead}>
-                  <View style={[styles.veredito, { borderColor: ui.color }]}>
-                    <Text style={[styles.vereditoText, { color: ui.color }]}>{ui.label}</Text>
-                  </View>
-                  <Text style={styles.evidenceClaim}>{e.afirmacao}</Text>
-                </View>
-                {!!e.evidencia && <Text style={styles.evidenceBody}>{e.evidencia}</Text>}
-                {e.fontes?.length > 0 && (
-                  <Text style={styles.evidenceSources}>Fontes: {e.fontes.join('; ')}</Text>
+              <View key={i}>
+                {clip(
+                  `evid:${i}`,
+                  <View style={styles.evidenceItem}>
+                    <View style={styles.evidenceHead}>
+                      <View style={[styles.veredito, { borderColor: ui.color }]}>
+                        <Text style={[styles.vereditoText, { color: ui.color }]}>{ui.label}</Text>
+                      </View>
+                      <Text style={styles.evidenceClaim}>{e.afirmacao}</Text>
+                    </View>
+                    {!!e.evidencia && <Text style={styles.evidenceBody}>{e.evidencia}</Text>}
+                    {e.fontes?.length > 0 && (
+                      <Text style={styles.evidenceSources}>Fontes: {e.fontes.join('; ')}</Text>
+                    )}
+                  </View>,
                 )}
               </View>
             );
@@ -224,11 +304,16 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
       {video.citacoes?.length > 0 && (
         <View style={styles.cites}>
           {video.citacoes.map((c, i) => (
-            <View key={i} style={styles.citeRow}>
-              <Text style={styles.citeText}>
-                {c.texto}
-                {c.timestamp ? <Text style={styles.citeTs}> — {c.timestamp}</Text> : null}
-              </Text>
+            <View key={i}>
+              {clip(
+                `cit:${i}`,
+                <View style={styles.citeRow}>
+                  <Text style={styles.citeText}>
+                    {c.texto}
+                    {c.timestamp ? <Text style={styles.citeTs}> — {c.timestamp}</Text> : null}
+                  </Text>
+                </View>,
+              )}
             </View>
           ))}
         </View>
@@ -272,6 +357,13 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
 
 const styles = StyleSheet.create({
   root: { marginTop: spacing.md },
+  clipHint: {
+    ...typography.label,
+    textTransform: 'none',
+    letterSpacing: 0,
+    color: colors.text.tertiary,
+    marginBottom: spacing.sm,
+  },
   aReal: {
     marginBottom: spacing.md,
     padding: spacing.md,

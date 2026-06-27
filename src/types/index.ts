@@ -103,6 +103,24 @@ export interface QAItem {
   created_at: string;
 }
 
+// Bloco clipável da análise (unidade que pode virar nota atômica).
+export interface ClipBlock {
+  key: string; // estável por vídeo (ex.: "evid:2")
+  label: string; // "Evidência", "Ponto-chave", "Citação"…
+  titleHint: string; // base para o título/arquivo da nota
+  bodyMd: string; // corpo Markdown do trecho
+}
+
+// Trecho da análise salvo como NOTA ATÔMICA no vault (um .md por trecho).
+export interface ClipRecord {
+  block_key: string; // identifica o bloco no vídeo (ex.: "evid:2")
+  video_id: string;
+  label: string; // "Evidência", "Ponto-chave", "Citação"…
+  title: string; // título/arquivo da nota atômica
+  drive_file_id: string; // id do .md no Drive (para abrir/excluir)
+  created_at: string;
+}
+
 export type Period = 'day' | 'week' | 'month';
 
 // Idioma das notas geradas: 'original' = idioma do vídeo (padrão do desktop);

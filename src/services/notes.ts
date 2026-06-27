@@ -5,8 +5,16 @@
 // desktop simplesmente não as escreve.
 
 import { MOC_NAME_NENHUM } from '../constants/defaults';
-import type { Fato, Pillar, QAItem, Veredito, VideoRecord } from '../types';
-import { noteBasename } from '../utils/sanitize';
+import type {
+  ClipBlock,
+  Evidencia,
+  Fato,
+  Pillar,
+  Veredito,
+  VideoRecord,
+  QAItem,
+} from '../types';
+import { noteBasename, sanitizeFilename } from '../utils/sanitize';
 
 const VEREDITO_LABEL: Record<Veredito, string> = {
   apoiada: 'apoiada por evidência',
@@ -14,6 +22,13 @@ const VEREDITO_LABEL: Record<Veredito, string> = {
   contestada: 'contestada pela evidência',
   sem_evidencia: 'sem evidência',
 };
+
+function evidenciaMd(e: Evidencia): string {
+  const lines = [`**${e.afirmacao}** — _${VEREDITO_LABEL[e.veredito]}_`];
+  if (e.evidencia) lines.push('', e.evidencia);
+  if (e.fontes?.length) lines.push('', `Fontes: ${e.fontes.join('; ')}`);
+  return lines.join('\n');
+}
 
 function fatoLine(f: Fato): string {
   return f.tipo === 'cloze' ? `- ${f.texto}` : `- ${f.frente} :: ${f.verso}`;
@@ -151,4 +166,65 @@ export function synthesisAsText(v: VideoRecord): string {
   }
   parts.push(v.url);
   return parts.join('\n');
+}
+
+// --- Destaques: blocos clipáveis → notas atômicas ----------------------------
+
+// Quebra a análise nos blocos que o usuário pode salvar individualmente.
+export function analysisBlocks(v: VideoRecord): ClipBlock[] {
+  const blocks: ClipBlock[] = [];
+  if (v.a_real) blocks.push({ key: 'areal', label: 'A real', titleHint: v.a_real, bodyMd: v.a_real });
+  if (v.resumo) blocks.push({ key: 'resumo', label: 'Resumo', titleHint: v.neutral_title, bodyMd: v.resumo });
+  (v.pontos_chave || []).forEach((p, i) => {
+    if (p?.trim()) blocks.push({ key: `ponto:${i}`, label: 'Ponto-chave', titleHint: p, bodyMd: `- ${p}` });
+  });
+  (v.evidencias || []).forEach((e, i) => {
+    if (e?.afirmacao?.trim() || e?.evidencia?.trim())
+      blocks.push({ key: `evid:${i}`, label: 'Evidência', titleHint: e.afirmacao || e.evidencia, bodyMd: evidenciaMd(e) });
+  });
+  (v.citacoes || []).forEach((c, i) => {
+    if (c?.texto?.trim())
+      blocks.push({
+        key: `cit:${i}`,
+        label: 'Citação',
+        titleHint: c.texto,
+        bodyMd: `> ${c.texto}${c.timestamp ? ` — ${c.timestamp}` : ''}`,
+      });
+  });
+  return blocks;
+}
+
+// Nome de arquivo único e legível da nota atômica.
+export function clipFilename(v: VideoRecord, block: ClipBlock): string {
+  const stem = sanitizeFilename(block.titleHint, 48);
+  const keySafe = block.key.replace(/[:]/g, '-');
+  return `${stem} — ${block.label} (${v.video_id} ${keySafe}).md`;
+}
+
+// Renderiza UM trecho como nota atômica, com link de volta para a nota do vídeo.
+export function renderClipNote(v: VideoRecord, block: ClipBlock, pillars: Pillar[]): string {
+  const pillarName = mocNameFor(v.pillar, pillars);
+  const data =
+    (v.published_at || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+  const autor = (v.channel || '').replace(/"/g, "'");
+  const back = noteBasename(v.neutral_title, v.video_id);
+  return [
+    '---',
+    'fonte: youtube',
+    'tipo: destaque',
+    `bloco: ${block.label}`,
+    `autor: "${autor}"`,
+    `pilar: ${v.pillar}`,
+    `data: ${data}`,
+    `url: ${v.url || ''}`,
+    `tags: [destaque, ${v.pillar}, aspis]`,
+    '---',
+    '',
+    `# ${block.label} — ${v.neutral_title}`,
+    '',
+    block.bodyMd,
+    '',
+    `— de [[${back}]] · [▶ assistir](${v.url || ''}) · [[${pillarName} - MOC]]`,
+    '',
+  ].join('\n');
 }

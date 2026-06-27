@@ -4,6 +4,7 @@ import * as SQLite from 'expo-sqlite';
 
 import type {
   Analysis,
+  ClipRecord,
   ContentSource,
   QAItem,
   QAKind,
@@ -41,6 +42,15 @@ CREATE TABLE IF NOT EXISTS qa (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_qa_video ON qa(video_id, id);
+CREATE TABLE IF NOT EXISTS clips (
+    block_key TEXT NOT NULL,
+    video_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    title TEXT NOT NULL,
+    drive_file_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (video_id, block_key)
+);
 `;
 
 // Colunas adicionadas depois do schema original — aplicadas com ALTER TABLE em
@@ -205,6 +215,35 @@ export function setFlag(videoId: string, field: Flag, value: 0 | 1): void {
 export function deleteVideo(videoId: string): void {
   conn().runSync('DELETE FROM videos WHERE video_id = ?', [videoId]);
   conn().runSync('DELETE FROM qa WHERE video_id = ?', [videoId]);
+  conn().runSync('DELETE FROM clips WHERE video_id = ?', [videoId]);
+}
+
+// --- trechos salvos como nota atômica (Destaques) ---------------------------
+export function getClips(videoId: string): Record<string, ClipRecord> {
+  const rows = conn().getAllSync<ClipRecord>(
+    'SELECT block_key, video_id, label, title, drive_file_id, created_at FROM clips WHERE video_id = ?',
+    [videoId],
+  );
+  const map: Record<string, ClipRecord> = {};
+  for (const r of rows) map[r.block_key] = r;
+  return map;
+}
+
+export function addClip(
+  videoId: string,
+  blockKey: string,
+  label: string,
+  title: string,
+  driveFileId: string,
+): void {
+  conn().runSync(
+    'INSERT OR REPLACE INTO clips (video_id, block_key, label, title, drive_file_id, created_at) VALUES (?,?,?,?,?,?)',
+    [videoId, blockKey, label, title, driveFileId, nowIso()],
+  );
+}
+
+export function removeClip(videoId: string, blockKey: string): void {
+  conn().runSync('DELETE FROM clips WHERE video_id = ? AND block_key = ?', [videoId, blockKey]);
 }
 
 export function setTranscriptText(videoId: string, text: string): void {

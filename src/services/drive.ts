@@ -168,3 +168,15 @@ export async function readNoteText(token: string, fileId: string): Promise<strin
   }
   return resp.text();
 }
+
+// Exclui um arquivo criado pelo app (escopo drive.file). Usado ao desfazer um
+// Destaque. 404 = já sumiu → trata como sucesso.
+export async function deleteFile(token: string, fileId: string): Promise<void> {
+  const resp = await fetch(`${FILES}/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok && resp.status !== 404) {
+    throw new DriveError(`Google Drive HTTP ${resp.status}`, resp.status);
+  }
+}
