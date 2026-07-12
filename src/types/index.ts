@@ -80,6 +80,7 @@ export interface VideoRecord extends Analysis {
   saved_drive: 0 | 1;
   transcript_text: string | null;
   channel_thumb: string;
+  audio_file?: string | null; // nome do .wav salvo no vault (nota de áudio)
 }
 
 // Fonte externa retornada pelo grounding do Gemini (Google Search) na

@@ -13,12 +13,16 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { File } from 'expo-file-system';
 
 import { getAccessToken } from '../services/auth';
 import * as db from '../services/db';
-import { deleteFile, saveMarkdown } from '../services/drive';
+import { deleteFile, saveMarkdown, uploadBinary } from '../services/drive';
+import { synthesizeSpeech } from '../services/geminiTTS';
 import {
   analysisBlocks,
+  analysisNarration,
+  audioFilename,
   clipsFilename,
   noteFilename,
   renderClipsNote,
@@ -202,6 +206,34 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // Salva o áudio da análise (Gemini TTS) no vault e deixa a nota como NOTA DE
+  // ÁUDIO (a nota .md ganha o embed ![[...wav]], tocável no Obsidian).
+  const [audioSaving, setAudioSaving] = useState(false);
+  const handleSaveAudio = async () => {
+    if (audioSaving) return;
+    setAudioSaving(true);
+    setNote(null);
+    try {
+      if (!user) {
+        const u = await googleSignIn();
+        if (!u) throw new Error('Conecte uma conta Google para salvar no Drive.');
+      }
+      const token = await getAccessToken();
+      const { uri } = await synthesizeSpeech(analysisNarration(video), ttsVoice, geminiKey);
+      const bytes = await new File(uri).bytes();
+      const fname = audioFilename(video);
+      await uploadBinary(token, fname, 'audio/wav', bytes);
+      db.setAudioFile(video.video_id, fname);
+      await persistNote(); // regrava a nota já com o embed do áudio
+      setSaved(true);
+      setNote({ kind: 'ok', text: '✓ Nota de áudio salva em Drive/Aspis.' });
+    } catch (e) {
+      setNote({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setAudioSaving(false);
+    }
+  };
+
   const handleToggleRead = () => {
     db.setFlag(video.video_id, 'read', read ? 0 : 1);
     onChanged?.();
@@ -228,12 +260,14 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
   if (firstCite?.timestamp) metaBits.push(`trecho em ${firstCite.timestamp}`);
   if (video.content_source === 'metadata') metaBits.push('análise por metadados');
 
+  const narration = analysisNarration(video);
+
   const listenLabel =
     audio.status === 'loading'
       ? 'Gerando voz…'
       : audio.status === 'playing'
         ? '■ Parar'
-        : '▶ Ouvir resumo';
+        : '▶ Ouvir análise';
 
   const clipCount = Object.keys(clips).length;
 
@@ -255,18 +289,31 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
 
       {clip('resumo', <Text style={styles.resumo}>{video.resumo}</Text>)}
 
-      {!!video.resumo && (
+      {!!narration && (
         <View style={styles.listenWrap}>
-          <Pressable
-            onPress={() => audio.toggle(video.resumo, ttsVoice, geminiKey)}
-            style={({ pressed }) => [styles.listenBtn, pressed && { opacity: 0.7 }]}
-          >
-            {audio.status === 'loading' ? (
-              <ActivityIndicator size="small" color={colors.accent.gold} />
-            ) : (
-              <Text style={styles.listenLabel}>{listenLabel}</Text>
-            )}
-          </Pressable>
+          <View style={styles.listenRow}>
+            <Pressable
+              onPress={() => audio.toggle(narration, ttsVoice, geminiKey)}
+              style={({ pressed }) => [styles.listenBtn, pressed && { opacity: 0.7 }]}
+            >
+              {audio.status === 'loading' ? (
+                <ActivityIndicator size="small" color={colors.accent.gold} />
+              ) : (
+                <Text style={styles.listenLabel}>{listenLabel}</Text>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={handleSaveAudio}
+              disabled={audioSaving}
+              style={({ pressed }) => [styles.listenBtn, pressed && { opacity: 0.7 }]}
+            >
+              {audioSaving ? (
+                <ActivityIndicator size="small" color={colors.accent.gold} />
+              ) : (
+                <Text style={styles.listenLabel}>🎙️ Salvar áudio</Text>
+              )}
+            </Pressable>
+          </View>
           {audio.error && (
             <View style={styles.listenErrWrap}>
               <Text style={styles.listenErr}>{audio.error}</Text>
@@ -418,6 +465,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   listenWrap: { marginBottom: spacing.md, gap: spacing.sm },
+  listenRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   listenBtn: {
     alignSelf: 'flex-start',
     flexDirection: 'row',

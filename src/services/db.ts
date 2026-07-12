@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS videos (
     saved_drive INTEGER DEFAULT 0,
     skipped INTEGER DEFAULT 0,
     transcript_text TEXT,
-    channel_thumb TEXT
+    channel_thumb TEXT,
+    audio_file TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS qa (
@@ -69,6 +70,7 @@ const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
   { table: 'qa', column: 'sources', ddl: "ALTER TABLE qa ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'" },
   { table: 'qa', column: 'saved_note', ddl: 'ALTER TABLE qa ADD COLUMN saved_note INTEGER NOT NULL DEFAULT 0' },
   { table: 'videos', column: 'skipped', ddl: 'ALTER TABLE videos ADD COLUMN skipped INTEGER DEFAULT 0' },
+  { table: 'videos', column: 'audio_file', ddl: 'ALTER TABLE videos ADD COLUMN audio_file TEXT' },
 ];
 
 const JSON_FIELDS = ['pontos_chave', 'fatos', 'citacoes', 'evidencias'] as const;
@@ -368,6 +370,10 @@ export function getFeedbackExamples(limit = 40): {
     [limit],
   );
   return { negatives, positives };
+}
+
+export function setAudioFile(videoId: string, filename: string | null): void {
+  conn().runSync('UPDATE videos SET audio_file = ? WHERE video_id = ?', [filename, videoId]);
 }
 
 export function setTranscriptText(videoId: string, text: string): void {

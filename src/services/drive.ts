@@ -116,6 +116,36 @@ export async function saveMarkdown(
   return { id: created.id, updated: false };
 }
 
+// Cria ou ATUALIZA um arquivo BINÁRIO (ex.: áudio .wav) na pasta Aspis. Duas
+// etapas: metadados (JSON) + mídia (bytes crus), evitando montar multipart
+// binário à mão.
+export async function uploadBinary(
+  token: string,
+  filename: string,
+  mimeType: string,
+  data: Uint8Array,
+): Promise<{ id: string; updated: boolean }> {
+  const folderId = await ensureAspisFolder(token);
+  const existing = await findFileByName(token, folderId, filename);
+  const updated = !!existing;
+  let id = existing;
+  if (!id) {
+    const created = await driveFetch(`${FILES}?fields=id`, token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: filename, parents: [folderId], mimeType }),
+    });
+    id = created.id as string;
+  }
+  const resp = await fetch(`${UPLOAD}/${id}?uploadType=media`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': mimeType },
+    body: data as unknown as BodyInit,
+  });
+  if (!resp.ok) throw new DriveError(`Google Drive HTTP ${resp.status}`, resp.status);
+  return { id: id!, updated };
+}
+
 // --- Leitor de notas (vault inteiro) — precisa do escopo drive.readonly -------
 
 export interface VaultNote {

@@ -44,6 +44,23 @@ export function noteFilename(v: VideoRecord): string {
   return `${noteBasename(v.neutral_title, v.video_id)}.md`;
 }
 
+// Nome do arquivo de áudio (nota de áudio) — mesmo "basename" da nota do vídeo.
+export function audioFilename(v: VideoRecord): string {
+  return `${noteBasename(v.neutral_title, v.video_id)}.wav`;
+}
+
+// Texto falado da ANÁLISE (para o TTS ler e para a nota de áudio): o veredito,
+// o resumo e os pontos-chave, numa narração natural.
+export function analysisNarration(v: VideoRecord): string {
+  const parts: string[] = [];
+  if (v.a_real) parts.push(`A real: ${v.a_real}`);
+  if (v.resumo) parts.push(`Resumo: ${v.resumo}`);
+  if (v.pontos_chave?.length) {
+    parts.push('Pontos-chave: ' + v.pontos_chave.map((p) => p.replace(/\.*$/, '')).join('. '));
+  }
+  return parts.join('. ').trim() || v.resumo || v.neutral_title;
+}
+
 export function renderNote(
   v: VideoRecord,
   pillars: Pillar[],
@@ -70,6 +87,10 @@ export function renderNote(
   ];
   if (v.a_real) {
     lines.push(`> [!tip] A real`, `> ${v.a_real}`, '');
+  }
+  // nota de áudio: embed do .wav (o Obsidian toca inline)
+  if (v.audio_file) {
+    lines.push('## Áudio', `![[${v.audio_file}]]`, '');
   }
   lines.push('## Resumo', v.resumo || '_(sem resumo)_', '');
   const pontos = v.pontos_chave || [];
