@@ -5,4 +5,6 @@ export type RootStackParamList = {
   PillarEdit: { pillarId?: string };
   Notes: undefined;
   NoteReader: { fileId: string; name: string };
+  Player: { videoId: string; kind: 'audio' | 'video' };
+  Media: undefined;
 };

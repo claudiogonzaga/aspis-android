@@ -49,7 +49,11 @@ export interface Analysis {
 }
 
 // De onde veio o conteúdo analisado (camadas da Funcionalidade 1).
-export type ContentSource = 'video' | 'captions' | 'metadata';
+// 'transcript' = transcrição feita NO CELULAR (Parakeet) quando não havia legenda.
+export type ContentSource = 'video' | 'captions' | 'metadata' | 'transcript';
+
+// De onde veio a transcrição salva do vídeo.
+export type TranscriptSource = 'youtube' | 'parakeet';
 
 // Metadados de um vídeo antes da análise (oEmbed e/ou videos.list).
 export interface VideoMeta {
@@ -81,6 +85,9 @@ export interface VideoRecord extends Analysis {
   transcript_text: string | null;
   channel_thumb: string;
   audio_file?: string | null; // nome do .wav salvo no vault (nota de áudio)
+  transcript_segments?: string | null; // JSON [{ts, text}] da transcrição
+  transcript_source?: TranscriptSource | null;
+  asr_status?: 'done' | 'failed' | 'skipped' | null; // transcrição automática
 }
 
 // Fonte externa retornada pelo grounding do Gemini (Google Search) na

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { AppState, Image, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreenAPI from 'expo-splash-screen';
@@ -20,6 +20,8 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { VaseBackground } from './src/components/VaseBackground';
 import type { RootStackParamList } from './src/navigation/types';
 import { useAppStore } from './src/store/useAppStore';
+import { useMediaStore } from './src/store/useMediaStore';
+import { useTranscribeStore } from './src/store/useTranscribeStore';
 import { colors } from './src/theme';
 
 SplashScreenAPI.preventAutoHideAsync().catch(() => {});
@@ -42,6 +44,19 @@ export default function App() {
   useEffect(() => {
     init().catch((e) => console.error('init failed', e));
   }, [init]);
+
+  // Áudio/vídeo offline: apaga o que venceu ao abrir e ao voltar para o app.
+  useEffect(() => {
+    if (!ready) return;
+    useMediaStore.getState().init();
+    useTranscribeStore.getState().init();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      useMediaStore.getState().refresh();
+      useTranscribeStore.getState().runAuto(); // retoma a triagem por transcrição
+    });
+    return () => sub.remove();
+  }, [ready]);
 
   useEffect(() => {
     if (ready && fontsLoaded) {

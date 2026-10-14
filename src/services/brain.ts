@@ -62,14 +62,26 @@ export class GeminiError extends Error {
 
 // --- prompt -----------------------------------------------------------------
 
+// Bloco dos pilares — mesmo texto do _pillars_block do desktop (brain.py),
+// inclusive o PESO 1–5, que pondera o ranqueamento entre os temas.
 function pillarsBlock(pillars: Pillar[]): string {
-  const linhas = ['Pilares do usuário:'];
+  const linhas = [
+    'Temas de interesse do usuário. Para cada tema, avalie o quanto o conteúdo ' +
+      "entrega o que ele QUER SABER (não o quanto o tema é só 'tocado'). O peso " +
+      '(1–5) indica a importância do tema: temas de peso maior pesam mais no ' +
+      'ranqueamento; conteúdo que serve a um tema de peso alto deve receber score ' +
+      'mais alto que conteúdo igualmente bom de um tema de peso baixo.',
+  ];
   for (const p of pillars) {
-    linhas.push(
-      `- ${p.id} (${p.nome || ''}): ${p.descricao || ''}\n` +
-        `    quero: ${(p.quero || []).join(', ')}\n` +
-        `    não quero: ${(p.nao_quero || []).join(', ')}`,
-    );
+    const quero = (p.quero || []).filter(Boolean);
+    const quer =
+      [p.descricao?.trim(), quero.length ? 'Interesses: ' + quero.join(', ') : '']
+        .filter(Boolean)
+        .join(' ') || '(não especificado)';
+    const evitar = (p.nao_quero || []).filter(Boolean).join(', ');
+    let bloco = `- ${p.id} (${p.nome || ''}) [peso ${p.peso ?? 3} de 5]:\n    quer saber: ${quer}`;
+    if (evitar) bloco += `\n    evitar: ${evitar}`;
+    linhas.push(bloco);
   }
   return linhas.join('\n');
 }
@@ -97,7 +109,9 @@ export function buildSystemText(
   if (learnedPrefs.trim()) {
     out +=
       '\n\nPERFIL APRENDIDO DO USUÁRIO (do que ele pulou vs salvou — use para ' +
-      'ajustar o score, SEM ignorar os pilares):\n' +
+      'ajustar o score de forma MODERADA, no máximo ~15 pontos para cima ou para ' +
+      'baixo, SEM ignorar os pilares; um padrão a evitar não condena um vídeo que ' +
+      'entregue substância):\n' +
       learnedPrefs.trim();
   }
   return out;
@@ -388,6 +402,18 @@ export async function analyze(
   const parts: GeminiPart[] = [{ text: buildUserMessage(video, null, false) }];
   const analysis = await analyzeOnce(video, parts, opts);
   return { analysis, source: 'metadata', transcript: null };
+}
+
+// Refaz a triagem (score/pilar/síntese) com uma transcrição obtida depois —
+// legendas encontradas mais tarde ou a transcrição feita no celular.
+export async function analyzeTranscript(
+  video: VideoMeta,
+  transcript: Transcript,
+  opts: BrainOptions,
+): Promise<Analysis> {
+  if (!opts.apiKey) throw new NoGeminiKeyError();
+  const parts: GeminiPart[] = [{ text: buildUserMessage(video, transcript, false) }];
+  return analyzeOnce(video, parts, opts);
 }
 
 // --- Q&A sobre um vídeo (port do brain.ask) ----------------------------------

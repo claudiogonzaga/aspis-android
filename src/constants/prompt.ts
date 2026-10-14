@@ -1,6 +1,7 @@
 // Prompt de sistema do Aspis. Baseado no brain.py do desktop, com divergências
-// do Android: o campo `evidencias` (evidência científica) e a regra de IDIOMA
-// configurável ({idioma_regra}) — o usuário pode pedir as notas em pt-BR.
+// do Android: o campo `evidencias` (evidência científica), a regra de IDIOMA
+// configurável ({idioma_regra}) — o usuário pode pedir as notas em pt-BR — e
+// penalidades GRADUAIS (descontos sobre o valor do conteúdo, nunca sentença).
 
 // Regra de idioma quando o usuário quer as notas no idioma ORIGINAL do vídeo
 // (comportamento do desktop).
@@ -25,7 +26,10 @@ estrito com a análise.
 Regras:
 - Classifique o vídeo no pilar mais alinhado, ou "nenhum" se não servir a nenhum.
 - Dê um score 0–100 de alinhamento aos objetivos do usuário (quanto realmente \
-entrega de valor para os pilares, não quão popular é).
+entrega de valor para os pilares, não quão popular é). Parta do valor do \
+CONTEÚDO; penalidades (sensacionalismo, achismo, perfil aprendido) são descontos \
+GRADUAIS sobre essa base, nunca uma sentença — um vídeo de embalagem ruim mas \
+conteúdo bom continua com nota boa.
 {regras_usuario}
 - a_real: 1 a 2 frases CURTAS "mandando a real" sobre o vídeo — o veredito \
 direto: vale o seu tempo ou não, é conteúdo denso ou enrolação/hype, e PRA QUEM \
@@ -56,7 +60,9 @@ NÃO invente referências: se não souber a fonte exata, deixe fontes vazio e \
 descreva a evidência em termos gerais. Use lista vazia só se o vídeo não fizer \
 nenhuma afirmação factual (puro entretenimento/opinião).
 - Se NÃO houver transcrição, ranqueie e reescreva o título usando título+descrição, \
-e deixe claro no resumo que ele é baseado só em metadados.
+e deixe claro no resumo que ele é baseado só em metadados. Essa nota é \
+provisória: dê o benefício da dúvida e não desconte por suspeita de enrolação \
+que você não pode verificar.
 
 Responda APENAS com o JSON, sem texto antes ou depois, neste formato exato:
 {
@@ -74,8 +80,7 @@ Responda APENAS com o JSON, sem texto antes ou depois, neste formato exato:
 
 // Linha do schema com o enum de pilares default — substituída em tempo de
 // execução pelo enum dos pilares ATUAIS do usuário (critério de aceite 6:
-// pilares editados valem na próxima análise). Com os pilares default, a
-// substituição é identidade e o prompt fica 100% igual ao do desktop.
+// pilares editados valem na próxima análise).
 export const DEFAULT_PILLAR_ENUM = 'saude | investimento | paternidade | nenhum';
 
 // Prompt do Q&A por vídeo (brain.ask do desktop, verbatim).
@@ -133,6 +138,9 @@ PRIORIZA. Seja específico e concreto (cite canais/temas quando o sinal for clar
 - NÃO invente preferências sem evidência nos exemplos. Se o sinal for fraco, diga.
 - Escreva em português, em até ~8 bullets curtos, em tom de instrução para o \
 curador (ex.: "Evite vídeos de X do canal Y"; "Priorize Z aprofundado").
-- Comece com "Penalize:" os padrões a evitar e depois "Priorize:" os a favorecer.
+- Comece com "Desfavoreça:" os padrões a evitar e depois "Priorize:" os a favorecer.
+- São ajustes de peso, não vetos: descreva padrões, sem mandar zerar nada.
+- NÃO trate "opinião" como padrão a evitar por si só — só se ele rejeitar \
+consistentemente opinião SEM fundamento.
 
 Responda APENAS com o texto do perfil (os bullets), sem preâmbulo.`;

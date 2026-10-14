@@ -31,13 +31,42 @@ export const DEFAULT_PILLARS: Pillar[] = [
     peso: 3,
     mocName: 'Paternidade',
   },
+  {
+    // Pilar amplo (igual ao desktop): conteúdo que ensina de verdade mas não cabe nos
+    // outros pilares deixa de cair em "nenhum" com nota baixa.
+    id: 'aprendizado',
+    nome: 'Curiosidade e aprendizado',
+    descricao:
+      'Aprender algo de verdade fora dos outros pilares: ciência, história, tecnologia, ' +
+      'como as coisas funcionam, ideias bem argumentadas.',
+    quero: ['explicações claras', 'especialistas', 'conteúdo com fontes', 'ensaios bem argumentados'],
+    nao_quero: ['listas de curiosidades rasas', 'react sem conteúdo', 'polêmica vazia'],
+    peso: 2,
+    mocName: 'Aprendizado',
+  },
 ];
 
 // Nome do MOC para vídeos sem pilar (obsidian.py: PILLAR_NAMES["nenhum"]).
 export const MOC_NAME_NENHUM = 'Geral';
 
-// Regras extras default da IA — copiadas do config.py (DEFAULT_RULES).
+// Regras extras default da IA — iguais ao config.py do desktop (DEFAULT_RULES):
+// descontos GRADUAIS (a embalagem não condena um conteúdo bom — dá para
+// "resgatar") e opinião não é defeito por si só.
 export const DEFAULT_RULES =
+  'Sensacionalismo (rage bait, isca de engajamento, promessas vazias, FOMO, CAPS, ' +
+  'emojis de alarme): marque is_clickbait e desconte aos poucos, conforme a ' +
+  'intensidade (em geral 5 a 15 pontos). A embalagem não decide a nota: se o ' +
+  'conteúdo entrega substância, a nota reflete a substância.\n' +
+  'Priorize densidade de informação acionável e evidência sobre popularidade.\n' +
+  'Opinião não é defeito: opinião qualificada (de quem entende do assunto, bem ' +
+  'argumentada ou baseada em evidências) vale como conteúdo. Desconte só o achismo ' +
+  'sem fundamento, e também aos poucos.\n' +
+  "Entretenimento sem relação com os pilares vai para 'nenhum' com nota baixa, " +
+  'mas sem zerar (em geral 10 a 20).';
+
+// Regras default ANTERIORES (iguais ao desktop) — quem nunca as editou migra
+// para as novas ao abrir o app.
+export const LEGACY_DEFAULT_RULES =
   'Penalize sensacionalismo: rage bait, isca de engajamento, promessas vazias, ' +
   'FOMO, CAPS, emojis de alarme — marque is_clickbait e reduza o score.\n' +
   'Priorize densidade de informação acionável e evidência sobre popularidade.\n' +
@@ -78,8 +107,12 @@ export const FLASHCARD_MAX_TOKENS = 1500; // extração de cartões de uma respo
 
 // Pipeline do feed.
 export const MAX_VIDEOS_PER_CHANNEL = 8; // config.yaml: max_videos_per_channel
-export const MAX_VIDEOS_PER_RUN = 25; // limite por execução (botão Atualizar)
+export const MAX_VIDEOS_PER_RUN = 40; // limite por execução (botão Atualizar)
+export const MAX_LOOKBACK_HOURS = 24 * 30; // busca cobre o tempo sem abrir o app, até 1 mês
+export const AUTO_REFRESH_AFTER_MS = 2 * 3600 * 1000; // abre o app → busca se a última foi há 2h+
 
-// Defaults de exibição. Alinhamento mínimo = centro da escala (nível 2 = 50%).
-export const DEFAULT_MIN_STARS = 2;
-export const DEFAULT_PERIOD: Period = 'day';
+// Defaults de exibição. Alinhamento mínimo = nível 1 (25%): o feed mostra
+// bastante e a régua aperta se o usuário quiser — começar no centro (50%)
+// combinado com o período "Dia" deixava o feed quase vazio.
+export const DEFAULT_MIN_STARS = 1;
+export const DEFAULT_PERIOD: Period = 'week';

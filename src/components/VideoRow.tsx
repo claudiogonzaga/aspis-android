@@ -51,6 +51,9 @@ export function VideoRow({ video, pillars, onPress, expanded, children }: Props)
             {video.is_clickbait === 1 && (
               <Text style={styles.clickbait}>· sensacionalista</Text>
             )}
+            {video.content_source === 'metadata' && (
+              <Text style={styles.clickbait}>· nota provisória</Text>
+            )}
           </View>
           {expanded && children}
         </View>

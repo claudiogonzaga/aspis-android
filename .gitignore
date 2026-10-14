@@ -7,12 +7,14 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native
-android/
-ios/
+# Native (só o prebuild da raiz — o android/ dos módulos locais é código-fonte)
+/android/
+/ios/
+modules/*/android/build/
 
 # Builds locais
 builds/*.apk
+builds/*.idsig
 
 # Credenciais — NUNCA versionar
 credentials.json
@@ -26,3 +28,6 @@ client_secret_*.json
 
 # typescript
 *.tsbuildinfo
+
+# sherpa-onnx AAR (grande; instale com scripts/fetch-sherpa-onnx.sh)
+modules/aspis-media/android/libs/*.aar

@@ -17,6 +17,7 @@ import * as db from '../services/db';
 import { fetchOEmbed } from '../services/oembed';
 import { getVideoDetails } from '../services/youtube';
 import { useAppStore } from '../store/useAppStore';
+import { useTranscribeStore } from '../store/useTranscribeStore';
 import type { RootStackParamList } from '../navigation/types';
 import type { VideoMeta, VideoRecord } from '../types';
 import { alignColor, colors, spacing, typography } from '../theme';
@@ -103,6 +104,7 @@ export function ShareScreen({ route, navigation }: Props) {
       });
       const saved = db.getVideo(videoId);
       if (saved) setState({ status: 'done', video: saved });
+      if (r.source === 'metadata') useTranscribeStore.getState().runAuto();
     } catch (e) {
       const keyError =
         e instanceof NoGeminiKeyError || (e instanceof GeminiError && e.isKeyError);

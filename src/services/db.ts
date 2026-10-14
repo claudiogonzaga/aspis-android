@@ -9,6 +9,8 @@ import type {
   QAItem,
   QAKind,
   Source,
+  Transcript,
+  TranscriptSource,
   VideoRecord,
 } from '../types';
 
@@ -30,7 +32,11 @@ CREATE TABLE IF NOT EXISTS videos (
     skipped INTEGER DEFAULT 0,
     transcript_text TEXT,
     channel_thumb TEXT,
-    audio_file TEXT
+    audio_file TEXT,
+    transcript_segments TEXT,
+    transcript_source TEXT,
+    asr_status TEXT,
+    asr_error TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS qa (
@@ -71,6 +77,10 @@ const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
   { table: 'qa', column: 'saved_note', ddl: 'ALTER TABLE qa ADD COLUMN saved_note INTEGER NOT NULL DEFAULT 0' },
   { table: 'videos', column: 'skipped', ddl: 'ALTER TABLE videos ADD COLUMN skipped INTEGER DEFAULT 0' },
   { table: 'videos', column: 'audio_file', ddl: 'ALTER TABLE videos ADD COLUMN audio_file TEXT' },
+  { table: 'videos', column: 'transcript_segments', ddl: 'ALTER TABLE videos ADD COLUMN transcript_segments TEXT' },
+  { table: 'videos', column: 'transcript_source', ddl: 'ALTER TABLE videos ADD COLUMN transcript_source TEXT' },
+  { table: 'videos', column: 'asr_status', ddl: 'ALTER TABLE videos ADD COLUMN asr_status TEXT' },
+  { table: 'videos', column: 'asr_error', ddl: 'ALTER TABLE videos ADD COLUMN asr_error TEXT' },
 ];
 
 const JSON_FIELDS = ['pontos_chave', 'fatos', 'citacoes', 'evidencias'] as const;
@@ -189,9 +199,18 @@ export interface VideoQuery {
   includeRead?: boolean;
 }
 
+// Nota provisória: triado só por título/descrição (sem legenda nem
+// transcrição ainda). Aparece no feed mesmo abaixo do limiar — a nota
+// definitiva vem quando a transcrição refaz a análise.
+const PROVISIONAL = "content_source = 'metadata'";
+
+export function isProvisional(v: Pick<VideoRecord, 'content_source'>): boolean {
+  return v.content_source === 'metadata';
+}
+
 export function getVideos(q: VideoQuery = {}): VideoRecord[] {
   let sql =
-    'SELECT * FROM videos WHERE score >= ? AND COALESCE(skipped, 0) = 0 ' +
+    `SELECT * FROM videos WHERE (score >= ? OR ${PROVISIONAL}) AND COALESCE(skipped, 0) = 0 ` +
     "AND channel_id NOT IN (SELECT channel_id FROM channel_prefs WHERE state = 'muted')";
   const args: SQLite.SQLiteBindValue[] = [q.minScore ?? 0];
   if (!q.includeRead) sql += ' AND COALESCE(read, 0) = 0';
@@ -209,14 +228,40 @@ export function getVideos(q: VideoQuery = {}): VideoRecord[] {
     .map(rowToRecord);
 }
 
-export function countBelow(minScore: number, sinceIso?: string | null): number {
-  let sql = 'SELECT COUNT(*) AS n FROM videos WHERE score < ?';
-  const args: SQLite.SQLiteBindValue[] = [minScore];
-  if (sinceIso) {
+// Quantos vídeos os filtros atuais escondem por estarem abaixo do limiar —
+// mesmos critérios do getVideos (pulados/silenciados/lidos/pilar), só o score
+// invertido, para o "N filtrados" bater com o que de fato apareceria. Os de
+// nota provisória não contam: esses já aparecem.
+export function countBelow(q: VideoQuery = {}): number {
+  let sql =
+    `SELECT COUNT(*) AS n FROM videos WHERE score < ? AND NOT COALESCE(${PROVISIONAL}, 0) ` +
+    'AND COALESCE(skipped, 0) = 0 ' +
+    "AND channel_id NOT IN (SELECT channel_id FROM channel_prefs WHERE state = 'muted')";
+  const args: SQLite.SQLiteBindValue[] = [q.minScore ?? 0];
+  if (!q.includeRead) sql += ' AND COALESCE(read, 0) = 0';
+  if (q.pillar) {
+    sql += ' AND pillar = ?';
+    args.push(q.pillar);
+  }
+  if (q.sinceIso) {
     sql += ' AND published_at >= ?';
-    args.push(sinceIso);
+    args.push(q.sinceIso);
   }
   return conn().getFirstSync<{ n: number }>(sql, args)?.n ?? 0;
+}
+
+// Vídeos (não pulados/silenciados/lidos) fora do período atual mas dentro de
+// `widerIso` — para o estado vazio sugerir "ampliar o período".
+export function countOutsidePeriod(sinceIso: string, widerIso: string, minScore: number): number {
+  return (
+    conn().getFirstSync<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM videos WHERE (score >= ? OR ${PROVISIONAL}) ` +
+        'AND COALESCE(skipped, 0) = 0 ' +
+        'AND COALESCE(read, 0) = 0 AND published_at < ? AND published_at >= ? ' +
+        "AND channel_id NOT IN (SELECT channel_id FROM channel_prefs WHERE state = 'muted')",
+      [minScore, sinceIso, widerIso],
+    )?.n ?? 0
+  );
 }
 
 export function setFlag(videoId: string, field: Flag, value: 0 | 1): void {
@@ -374,6 +419,73 @@ export function getFeedbackExamples(limit = 40): {
 
 export function setAudioFile(videoId: string, filename: string | null): void {
   conn().runSync('UPDATE videos SET audio_file = ? WHERE video_id = ?', [filename, videoId]);
+}
+
+// --- transcrição (legendas do YouTube ou Parakeet no celular) --------------
+export function setTranscript(
+  videoId: string,
+  transcript: Transcript,
+  source: TranscriptSource,
+): void {
+  conn().runSync(
+    `UPDATE videos SET transcript_text = ?, transcript_segments = ?, transcript_source = ?,
+       transcript_available = 1 WHERE video_id = ?`,
+    [transcript.text, JSON.stringify(transcript.segments ?? []), source, videoId],
+  );
+}
+
+export function getTranscriptSegments(video: VideoRecord): { ts: string; text: string }[] {
+  try {
+    const segs = video.transcript_segments ? JSON.parse(video.transcript_segments) : [];
+    return Array.isArray(segs) ? segs : [];
+  } catch {
+    return [];
+  }
+}
+
+// Reescreve SÓ os campos da análise (mantém lido/salvo/destaques/transcrição).
+export function updateAnalysis(videoId: string, a: Analysis, source: ContentSource): void {
+  conn().runSync(
+    `UPDATE videos SET pillar = ?, score = ?, is_clickbait = ?, neutral_title = ?, a_real = ?,
+       resumo = ?, pontos_chave = ?, fatos = ?, citacoes = ?, evidencias = ?, content_source = ?
+     WHERE video_id = ?`,
+    [
+      a.pillar, a.score, a.is_clickbait, a.neutral_title, a.a_real, a.resumo,
+      JSON.stringify(a.pontos_chave ?? []), JSON.stringify(a.fatos ?? []),
+      JSON.stringify(a.citacoes ?? []), JSON.stringify(a.evidencias ?? []),
+      source, videoId,
+    ],
+  );
+}
+
+export function setAsrStatus(
+  videoId: string,
+  status: 'done' | 'failed' | 'skipped' | null,
+  error: string | null = null,
+): void {
+  conn().runSync('UPDATE videos SET asr_status = ?, asr_error = ? WHERE video_id = ?', [
+    status, error, videoId,
+  ]);
+}
+
+// Fila da transcrição automática: vídeos triados só por metadados (sem
+// legenda) nos últimos 14 dias, ainda não lidos/pulados, de canais não
+// silenciados — mais novos primeiro. O próprio banco é a fila (sobrevive a
+// fechar o app).
+export function autoTranscribeCandidates(limit = 50): VideoRecord[] {
+  const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+  return conn()
+    .getAllSync<Record<string, unknown>>(
+      `SELECT * FROM videos
+        WHERE content_source = 'metadata' AND COALESCE(transcript_text, '') = ''
+          AND asr_status IS NULL AND COALESCE(skipped, 0) = 0 AND COALESCE(read, 0) = 0
+          AND fetched_at >= ?
+          AND COALESCE(channel_id, '') NOT IN
+              (SELECT channel_id FROM channel_prefs WHERE state = 'muted')
+        ORDER BY published_at DESC LIMIT ?`,
+      [since, limit],
+    )
+    .map(rowToRecord);
 }
 
 export function setTranscriptText(videoId: string, text: string): void {

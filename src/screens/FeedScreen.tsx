@@ -1,7 +1,7 @@
 // Feed de inscrições ranqueado — port da lista do desktop (ui/index.html):
 // chips de pilar, régua de estrelas mínimas, período Dia/Semana/Mês,
 // "Mostrar lidos", expansão inline da síntese e rodapé com os filtrados.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -21,13 +21,14 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { StarsRuler } from '../components/StarsRuler';
 import { SynthesisView } from '../components/SynthesisView';
 import { VideoRow } from '../components/VideoRow';
-import { PERIODS, starsToThreshold } from '../constants/defaults';
+import { AUTO_REFRESH_AFTER_MS, PERIOD_LABELS, PERIODS, starsToThreshold } from '../constants/defaults';
 import { getAccessToken, NotSignedInError } from '../services/auth';
 import { GeminiError, NoGeminiKeyError } from '../services/brain';
 import * as db from '../services/db';
 import { refreshFeed } from '../services/pipeline';
 import { checkForUpdate, type UpdateInfo } from '../services/updateChecker';
 import { useAppStore } from '../store/useAppStore';
+import { useTranscribeStore } from '../store/useTranscribeStore';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing, typography } from '../theme';
 
@@ -85,10 +86,19 @@ export function FeedScreen({ navigation }: Props) {
     [activePillar, threshold, sinceIso, showRead, feedVersion],
   );
   const filteredOut = useMemo(
-    () => db.countBelow(threshold, sinceIso),
-    [threshold, sinceIso, feedVersion],
+    () =>
+      db.countBelow({ pillar: activePillar, minScore: threshold, sinceIso, includeRead: showRead }),
+    [activePillar, threshold, sinceIso, showRead, feedVersion],
   );
+  // estado vazio: há vídeos no mês fora do período atual? → sugere ampliar
+  const outsidePeriod = useMemo(() => {
+    if (videos.length > 0 || period === 'month') return 0;
+    const monthIso = new Date(Date.now() - PERIODS.month * 3600 * 1000).toISOString();
+    return db.countOutsidePeriod(sinceIso, monthIso, threshold);
+  }, [videos.length, period, sinceIso, threshold, feedVersion]);
   const newCount = videos.filter((v) => v.read === 0).length;
+  // lista vem por score desc: daqui para baixo só há nota provisória abaixo do limiar
+  const firstProvisionalBelow = videos.findIndex((v) => v.score < threshold);
 
   const onRefresh = useCallback(async () => {
     setBanner(null);
@@ -130,6 +140,8 @@ export function FeedScreen({ navigation }: Props) {
       if (result.capped) bits.push(`${result.capped} ficam para a próxima`);
       setBanner({ kind: 'ok', text: `Pronto · ${bits.join(' · ')}` });
       bumpFeed();
+      // vídeos sem legenda: transcreve no celular e refaz a triagem
+      useTranscribeStore.getState().runAuto();
     } catch (e) {
       const keyError =
         e instanceof NoGeminiKeyError || (e instanceof GeminiError && e.isKeyError);
@@ -146,6 +158,17 @@ export function FeedScreen({ navigation }: Props) {
       setRefreshing(false);
     }
   }, [user, geminiKey, model, pillars, rules, noteLang, learnedPrefs, period, minStars, googleSignIn, bumpFeed]);
+
+  // Abrir o app já busca vídeos novos (sem precisar puxar a lista), se a
+  // última busca foi há mais de 2h — só com conta e chave já configuradas,
+  // para não abrir login/erro sozinho.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || !user || !geminiKey) return;
+    autoRan.current = true;
+    const last = Date.parse(db.getMeta('last_run') || '');
+    if (!Number.isFinite(last) || Date.now() - last > AUTO_REFRESH_AFTER_MS) onRefresh();
+  }, [user, geminiKey, onRefresh]);
 
   const header = (
     <View style={styles.header}>
@@ -168,6 +191,9 @@ export function FeedScreen({ navigation }: Props) {
           <Text style={styles.appName}>Aspis</Text>
         </View>
         <View style={styles.headerActions}>
+          <Pressable onPress={() => navigation.navigate('Media')} hitSlop={10}>
+            <Text style={styles.headerAction}>No celular</Text>
+          </Pressable>
           <Pressable onPress={() => navigation.navigate('Notes')} hitSlop={10}>
             <Text style={styles.headerAction}>Notas</Text>
           </Pressable>
@@ -249,8 +275,34 @@ export function FeedScreen({ navigation }: Props) {
   ) : (
     <View style={styles.empty}>
       <Text style={styles.emptyText}>
-        Nada por aqui no período. Puxe a lista para baixo para buscar vídeos novos.
+        {refreshing
+          ? 'Buscando vídeos novos…'
+          : filteredOut > 0 || outsidePeriod > 0
+            ? 'Nada passou pelos filtros atuais.'
+            : 'Nada por aqui no período. Puxe a lista para baixo para buscar vídeos novos.'}
       </Text>
+      <View style={styles.emptyActions}>
+        {filteredOut > 0 && (
+          <Chip
+            label={`Ver ${filteredOut} abaixo do limiar`}
+            active={false}
+            onPress={() => setMinStars(0)}
+          />
+        )}
+        {outsidePeriod > 0 && (
+          <Chip
+            label={`Ampliar para ${PERIOD_LABELS[period === 'day' ? 'week' : 'month']}`}
+            active={false}
+            onPress={() => setPeriod(period === 'day' ? 'week' : 'month')}
+          />
+        )}
+        {activePillar && (
+          <Chip label="Todos os pilares" active={false} onPress={() => setActivePillar(null)} />
+        )}
+        {!showRead && (
+          <Chip label="Mostrar lidos" active={false} onPress={() => setShowRead(true)} />
+        )}
+      </View>
     </View>
   );
 
@@ -262,10 +314,13 @@ export function FeedScreen({ navigation }: Props) {
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
         ListFooterComponent={
-          videos.length > 0 || filteredOut > 0 ? (
-            <Text style={styles.footer}>
-              {filteredOut} {filteredOut === 1 ? 'vídeo filtrado' : 'vídeos filtrados'}
-            </Text>
+          videos.length > 0 && filteredOut > 0 ? (
+            <Pressable onPress={() => setMinStars(0)} hitSlop={8}>
+              <Text style={styles.footer}>
+                {filteredOut} {filteredOut === 1 ? 'vídeo abaixo' : 'vídeos abaixo'} do limiar ·{' '}
+                <Text style={{ color: colors.accent.gold }}>mostrar</Text>
+              </Text>
+            </Pressable>
           ) : null
         }
         refreshControl={
@@ -277,22 +332,30 @@ export function FeedScreen({ navigation }: Props) {
             progressBackgroundColor={colors.bg.gradientEnd}
           />
         }
-        renderItem={({ item }) => (
-          <VideoRow
-            video={item}
-            pillars={pillars}
-            expanded={expandedId === item.video_id}
-            onPress={() =>
-              setExpandedId(expandedId === item.video_id ? null : item.video_id)
-            }
-          >
-            <SynthesisView
+        renderItem={({ item, index }) => (
+          <>
+            {index === firstProvisionalBelow && (
+              <Text style={styles.divider}>
+                Abaixo do limiar, mas com nota provisória (só título e descrição) — a nota
+                definitiva vem com a transcrição.
+              </Text>
+            )}
+            <VideoRow
               video={item}
-              context="feed"
-              onChanged={bumpFeed}
-              onNeedSettings={() => navigation.navigate('Settings')}
-            />
-          </VideoRow>
+              pillars={pillars}
+              expanded={expandedId === item.video_id}
+              onPress={() =>
+                setExpandedId(expandedId === item.video_id ? null : item.video_id)
+              }
+            >
+              <SynthesisView
+                video={item}
+                context="feed"
+                onChanged={bumpFeed}
+                onNeedSettings={() => navigation.navigate('Settings')}
+              />
+            </VideoRow>
+          </>
         )}
         contentContainerStyle={styles.list}
       />
@@ -365,11 +428,27 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
   },
+  emptyActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: spacing.lg,
+  },
   emptyHint: {
     ...typography.small,
     color: colors.text.tertiary,
     textAlign: 'center',
     marginTop: spacing.xl,
+  },
+  divider: {
+    ...typography.small,
+    color: colors.text.tertiary,
+    textAlign: 'center',
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   footer: {
     ...typography.small,

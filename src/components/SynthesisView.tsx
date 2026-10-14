@@ -31,9 +31,13 @@ import {
 } from '../services/notes';
 import { useReadAloud } from '../hooks/useReadAloud';
 import { useAppStore } from '../store/useAppStore';
+import { useMediaStore } from '../store/useMediaStore';
+import { useTranscribeStore } from '../store/useTranscribeStore';
 import type { ClipBlock, ClipRecord, Veredito, VideoRecord } from '../types';
 import { colors, radius, spacing, typography } from '../theme';
 import { ClippableBlock } from './ClippableBlock';
+import { MediaActions } from './MediaActions';
+import { TranscriptBlock } from './TranscriptBlock';
 import { QASection } from './QASection';
 
 const VEREDITO_UI: Record<Veredito, { label: string; color: string }> = {
@@ -84,7 +88,13 @@ function ActionBtn({
   );
 }
 
-export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSettings }: Props) {
+export function SynthesisView({ video: videoProp, context, onChanged, onDiscard, onNeedSettings }: Props) {
+  // Relê do banco quando uma transcrição termina (a triagem pode ter mudado).
+  const transcribeVersion = useTranscribeStore((s) => s.version);
+  const video = useMemo(
+    () => (transcribeVersion ? db.getVideo(videoProp.video_id) ?? videoProp : videoProp),
+    [videoProp, transcribeVersion],
+  );
   const { pillars, user, googleSignIn, geminiKey, ttsVoice } = useAppStore();
   const audio = useReadAloud();
   const [saving, setSaving] = useState(false);
@@ -240,6 +250,7 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
   };
 
   const handleDiscard = () => {
+    useMediaStore.getState().remove(video.video_id);
     db.deleteVideo(video.video_id);
     onDiscard?.();
   };
@@ -258,7 +269,9 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
   const metaBits: string[] = [];
   if (nFatos > 0) metaBits.push(`${nFatos} ${nFatos === 1 ? 'fato' : 'fatos'} para memorizar`);
   if (firstCite?.timestamp) metaBits.push(`trecho em ${firstCite.timestamp}`);
-  if (video.content_source === 'metadata') metaBits.push('análise por metadados');
+  if (video.content_source === 'metadata')
+    metaBits.push('nota provisória — só título e descrição; refeita com a transcrição');
+  if (video.content_source === 'transcript') metaBits.push('análise pela transcrição no celular');
 
   const narration = analysisNarration(video);
 
@@ -288,6 +301,10 @@ export function SynthesisView({ video, context, onChanged, onDiscard, onNeedSett
         )}
 
       {clip('resumo', <Text style={styles.resumo}>{video.resumo}</Text>)}
+
+      <MediaActions video={video} />
+
+      <TranscriptBlock video={video} />
 
       {!!narration && (
         <View style={styles.listenWrap}>

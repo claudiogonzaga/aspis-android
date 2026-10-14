@@ -3,6 +3,7 @@
 // analisados não são reprocessados (cache por video_id, como o desktop).
 
 import {
+  MAX_LOOKBACK_HOURS,
   MAX_VIDEOS_PER_CHANNEL,
   MAX_VIDEOS_PER_RUN,
   PERIODS,
@@ -56,7 +57,15 @@ export async function refreshFeed(
   minStars: number,
   onProgress?: (p: RefreshProgress) => void,
 ): Promise<RefreshResult> {
-  const sinceIso = new Date(Date.now() - PERIODS[period] * 3600 * 1000).toISOString();
+  // Janela de busca = o período OU desde a última execução, o que for maior:
+  // se o app ficou dias fechado com o período "Dia", os vídeos desses dias
+  // não podem ser pulados para sempre (cache por video_id evita reprocessar).
+  const lastRun = Date.parse(db.getMeta('last_run') || '');
+  const lookbackMs = Math.min(
+    MAX_LOOKBACK_HOURS * 3600 * 1000,
+    Math.max(PERIODS[period] * 3600 * 1000, Number.isFinite(lastRun) ? Date.now() - lastRun : 0),
+  );
+  const sinceIso = new Date(Date.now() - lookbackMs).toISOString();
 
   onProgress?.({ stage: 'subs', done: 0, total: 0 });
   const channelIds = await getSubscriptions(token);

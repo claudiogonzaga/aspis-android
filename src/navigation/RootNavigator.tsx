@@ -4,8 +4,10 @@ import type { NavigationContainerRefWithCurrent } from '@react-navigation/native
 
 import { FeedScreen } from '../screens/FeedScreen';
 import { NotesScreen } from '../screens/NotesScreen';
+import { MediaScreen } from '../screens/MediaScreen';
 import { NoteReaderScreen } from '../screens/NoteReaderScreen';
 import { PillarEditScreen } from '../screens/PillarEditScreen';
+import { PlayerScreen } from '../screens/PlayerScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ShareScreen } from '../screens/ShareScreen';
 import { colors } from '../theme';
@@ -47,6 +49,8 @@ export function RootNavigator({ navigationRef, onReady }: Props) {
         <Stack.Screen name="PillarEdit" component={PillarEditScreen} />
         <Stack.Screen name="Notes" component={NotesScreen} />
         <Stack.Screen name="NoteReader" component={NoteReaderScreen} />
+        <Stack.Screen name="Player" component={PlayerScreen} />
+        <Stack.Screen name="Media" component={MediaScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

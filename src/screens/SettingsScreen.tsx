@@ -19,12 +19,16 @@ import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Chip } from '../components/Chip';
 import { PeriodSegment } from '../components/PeriodSegment';
+import { PrefetchPicker, RetentionPicker } from '../components/RetentionPicker';
+import { TranscriptionSettings } from '../components/TranscriptionSettings';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StarsRuler } from '../components/StarsRuler';
 import { MODEL_PRESETS } from '../constants/defaults';
 import * as db from '../services/db';
 import type { ChannelPref } from '../services/db';
 import { GEMINI_VOICES } from '../services/geminiTTS';
+import { MEDIA_SUPPORTED } from '../services/media';
+import { TRANSCRIPTION_SUPPORTED } from '../services/transcription';
 import {
   checkForUpdate,
   getCurrentVersion,
@@ -353,6 +357,31 @@ export function SettingsScreen({ navigation }: Props) {
             style={{ marginTop: spacing.md }}
           />
         </Section>
+
+        {MEDIA_SUPPORTED && (
+          <Section
+            title="Áudio e vídeo no celular"
+            sub="“Ouvir áudio” e “Assistir vídeo” baixam o arquivo só para este celular e tocam no Aspis. Apagar sozinho depois de:"
+          >
+            <RetentionPicker />
+            <Text style={[styles.voiceDesc, { marginBottom: spacing.sm }]}>
+              Pré-baixar ao abrir um vídeo (áudio e vídeo ficam prontos antes de você tocar):
+            </Text>
+            <PrefetchPicker />
+            <Pressable onPress={() => navigation.navigate('Media')} style={{ marginTop: spacing.md }}>
+              <Text style={styles.link}>Ver o que está baixado ›</Text>
+            </Pressable>
+          </Section>
+        )}
+
+        {TRANSCRIPTION_SUPPORTED && (
+          <Section
+            title="Transcrição no celular"
+            sub="Vídeos sem legenda são transcritos no próprio celular com o modelo NVIDIA Parakeet (ótimo em português, sem internet para transcrever) — e a triagem é refeita com o conteúdo real do vídeo."
+          >
+            <TranscriptionSettings />
+          </Section>
+        )}
 
         <Section title="Exibição" sub="Estrelas mínimas para um vídeo aparecer e período padrão.">
           <StarsRuler value={minStars} onChange={setMinStars} />

@@ -13,6 +13,7 @@ import {
   DEFAULT_PERIOD,
   DEFAULT_PILLARS,
   DEFAULT_RULES,
+  LEGACY_DEFAULT_RULES,
 } from '../constants/defaults';
 import { DEFAULT_GEMINI_VOICE, isValidVoice } from '../services/geminiTTS';
 import {
@@ -39,6 +40,8 @@ const K = {
   noteLang: 'aspis:noteLang',
   channel: 'aspis:channel',
   learnedPrefs: 'aspis:learnedPrefs',
+  defaultsV2: 'aspis:defaultsV2',
+  pillarsV2: 'aspis:pillarsV2',
 } as const;
 
 interface AppState {
@@ -120,6 +123,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (raw) pillars = normalizePillars(JSON.parse(raw));
     } catch {
       // mantém defaults
+    }
+
+    // Migração única: pilares salvos ganham o pilar amplo "aprendizado" (se o
+    // usuário apagá-lo depois, não volta).
+    if (!map.get(K.pillarsV2)) {
+      const extra = DEFAULT_PILLARS.find((p) => p.id === 'aprendizado');
+      if (map.get(K.pillars) && extra && !pillars.some((p) => p.id === extra.id)) {
+        pillars = [...pillars, extra];
+        AsyncStorage.setItem(K.pillars, JSON.stringify(pillars)).catch(() => {});
+      }
+      AsyncStorage.setItem(K.pillarsV2, '1').catch(() => {});
+    }
+
+    // Regras: quem tinha as regras default antigas (nunca editou) passa a usar
+    // as novas — e deixa de gravá-las, para seguir futuras atualizações.
+    if (map.get(K.rules) === LEGACY_DEFAULT_RULES) {
+      map.delete(K.rules);
+      AsyncStorage.removeItem(K.rules).catch(() => {});
+    }
+
+    // Migração única: quem ainda estava nos defaults antigos (Dia + nível 2),
+    // que deixavam o feed quase vazio, passa para os novos (Semana + nível 1).
+    if (!map.get(K.defaultsV2)) {
+      if (map.get(K.period) === 'day' && map.get(K.minStars) === '2') {
+        map.set(K.period, DEFAULT_PERIOD);
+        map.set(K.minStars, String(DEFAULT_MIN_STARS));
+        AsyncStorage.multiSet([
+          [K.period, DEFAULT_PERIOD],
+          [K.minStars, String(DEFAULT_MIN_STARS)],
+        ]).catch(() => {});
+      }
+      AsyncStorage.setItem(K.defaultsV2, '1').catch(() => {});
     }
 
     set({
